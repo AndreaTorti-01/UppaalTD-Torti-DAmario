@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// Place global declarations here.
+chan coin, beer, soda;
+</declaration>
+	<template>
+		<name x="5" y="5">VendingMachine</name>
+		<declaration>// Place local declarations here.
+</declaration>
+		<location id="id0" x="0" y="0">
+			<name x="-10" y="-34">idle</name>
+		</location>
+		<location id="id1" x="187" y="0">
+			<name x="212" y="-17">paid</name>
+		</location>
+		<location id="id2" x="314" y="-110">
+			<name x="304" y="-144">Beer</name>
+		</location>
+		<location id="id3" x="314" y="119">
+			<name x="304" y="85">Soda</name>
+		</location>
+		<init ref="id0"/>
+		<transition id="id4">
+			<source ref="id2"/>
+			<target ref="id0"/>
+		</transition>
+		<transition id="id5">
+			<source ref="id3"/>
+			<target ref="id0"/>
+		</transition>
+		<transition id="id6">
+			<source ref="id1"/>
+			<target ref="id3"/>
+			<label kind="synchronisation" x="255" y="42">soda?</label>
+		</transition>
+		<transition id="id7">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="263" y="-51">beer?</label>
+		</transition>
+		<transition id="id8">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="synchronisation" x="93" y="-25">coin?</label>
+		</transition>
+	</template>
+	<template>
+		<name>User</name>
+		<location id="id9" x="0" y="0">
+			<name x="-10" y="-34">start</name>
+		</location>
+		<location id="id10" x="119" y="0">
+			<name x="109" y="-34">inserted</name>
+		</location>
+		<location id="id11" x="348" y="34">
+			<name x="338" y="0">Chosen</name>
+		</location>
+		<init ref="id9"/>
+		<transition id="id12">
+			<source ref="id11"/>
+			<target ref="id9"/>
+			<nail x="187" y="110"/>
+		</transition>
+		<transition id="id13">
+			<source ref="id10"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="212" y="8">beer!</label>
+			<nail x="221" y="34"/>
+		</transition>
+		<transition id="id14">
+			<source ref="id10"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="238" y="-68">soda!</label>
+			<nail x="255" y="-34"/>
+		</transition>
+		<transition id="id15">
+			<source ref="id9"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="18" y="-17">coin!</label>
+		</transition>
+	</template>
+	<system>VendingMachin = VendingMachine();
+User1 = User();
+system VendingMachin, User1;
+</system>
+	<queries>
+		<query>
+			<formula>A[] VendingMachin.paid imply not User1.beer!
+</formula>
+			<comment/>
+		</query>
+	</queries>
+</nta>
