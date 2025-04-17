@@ -1,0 +1,463 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// Place global declarations here.
+const int HEI = 8;
+const int LEN = 16;
+
+/*
+0 white
+1 red (path)
+2 green (turret)
+3 blue (main tower)
+enemies spawn in 0,0
+*/
+
+const int[0,3] grid[HEI][LEN] = {
+// x = 0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
+    {  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0 }, // y = 0
+    {  1,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  1,  0 }, // y = 1
+    {  1,  0,  2,  0,  0,  0,  0,  1,  2,  0,  0,  0,  0,  0,  2,  1 }, // y = 2
+    {  1,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  1,  1 }, // y = 3
+    {  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  3 }, // y = 4
+    {  0,  0,  0,  0,  0,  2,  0,  1,  0,  0,  0,  2,  0,  0,  0,  1 }, // y = 5
+    {  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  1,  0,  0,  0,  2,  1 }, // y = 6
+    {  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  1,  1 }  // y = 7
+};
+
+// definiamo tabella nemici
+const int EnemyNumber = 6;
+typedef int[0,EnemyNumber-1] enemysc_id;
+
+typedef struct {
+     int speed;
+     int initial_health;
+     int demage;
+     int offset; //usiamo offset, ad ogni istanza i abbiamo offset= spawn*i
+} enemy_t;
+
+const enemy_t enemysc[EnemyNumber] = {
+    {3,20,4,0}, //square 1
+    {3,20,4,3}, //square 2
+    {3,20,4,6}, //square 3
+    {1,10,2,0}, //circle 1
+    {1,10,2,2}, //circle 2
+    {1,10,2,4}  //circle 3
+};
+
+// Turret parameters for Basic, Cannon, and Sniper
+const int BASIC_RANGE = 2;
+const int BASIC_FIRE_SPEED = 2;
+const int BASIC_DAMAGE = 2;
+
+const int CANNON_RANGE = 1;
+const int CANNON_FIRE_SPEED = 7;
+const int CANNON_DAMAGE = 5;
+
+const int SNIPER_RANGE = 4;
+const int SNIPER_FIRE_SPEED = 20;
+const int SNIPER_DAMAGE = 8;
+
+// Other shared variables (e.g., game time)
+clock globalClock;
+
+chan move[EnemyNumber];
+
+//const int spawnTime = square ? 3 : 2;</declaration>
+	<template>
+		<name>Enemy</name>
+		<parameter>const enemysc_id id</parameter>
+		<location id="id0" x="646" y="-68">
+		</location>
+		<location id="id1" x="578" y="-68">
+		</location>
+		<location id="id2" x="510" y="-68">
+		</location>
+		<location id="id3" x="442" y="-68">
+		</location>
+		<location id="id4" x="374" y="-68">
+		</location>
+		<location id="id5" x="374" y="-136">
+		</location>
+		<location id="id6" x="374" y="-204">
+		</location>
+		<location id="id7" x="714" y="-136">
+		</location>
+		<location id="id8" x="714" y="-204">
+		</location>
+		<location id="id9" x="714" y="-68">
+			<name x="731" y="-102">MainTower</name>
+		</location>
+		<location id="id10" x="714" y="0">
+		</location>
+		<location id="id11" x="714" y="68">
+		</location>
+		<location id="id12" x="714" y="136">
+		</location>
+		<location id="id13" x="646" y="136">
+		</location>
+		<location id="id14" x="578" y="136">
+		</location>
+		<location id="id15" x="510" y="136">
+		</location>
+		<location id="id16" x="442" y="136">
+		</location>
+		<location id="id17" x="374" y="136">
+		</location>
+		<location id="id18" x="306" y="136">
+		</location>
+		<location id="id19" x="238" y="136">
+		</location>
+		<location id="id20" x="714" y="-272">
+		</location>
+		<location id="id21" x="646" y="-272">
+		</location>
+		<location id="id22" x="578" y="-272">
+		</location>
+		<location id="id23" x="510" y="-272">
+		</location>
+		<location id="id24" x="442" y="-272">
+		</location>
+		<location id="id25" x="374" y="-272">
+		</location>
+		<location id="id26" x="306" y="-272">
+		</location>
+		<location id="id27" x="238" y="-272">
+		</location>
+		<location id="id28" x="170" y="136">
+		</location>
+		<location id="id29" x="170" y="68">
+		</location>
+		<location id="id30" x="170" y="0">
+		</location>
+		<location id="id31" x="170" y="-272">
+		</location>
+		<location id="id32" x="170" y="-204">
+		</location>
+		<location id="id33" x="170" y="-136">
+		</location>
+		<location id="id34" x="170" y="-68">
+		</location>
+		<location id="id35" x="102" y="-68">
+		</location>
+		<location id="id36" x="34" y="-68">
+		</location>
+		<location id="id37" x="-34" y="-68">
+		</location>
+		<location id="id38" x="-102" y="-68">
+		</location>
+		<location id="id39" x="-170" y="-68">
+		</location>
+		<location id="id40" x="-238" y="-68">
+		</location>
+		<location id="id41" x="-306" y="-68">
+		</location>
+		<location id="id42" x="-306" y="0">
+		</location>
+		<location id="id43" x="-306" y="68">
+		</location>
+		<location id="id44" x="-306" y="136">
+		</location>
+		<location id="id45" x="-306" y="204">
+		</location>
+		<init ref="id45"/>
+		<transition id="id46">
+			<source ref="id0"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="629" y="-51">move[id]?</label>
+		</transition>
+		<transition id="id47">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="569" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id48">
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="synchronisation" x="510" y="-51">move[id]?</label>
+		</transition>
+		<transition id="id49">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="442" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id50">
+			<source ref="id4"/>
+			<target ref="id3"/>
+			<label kind="synchronisation" x="374" y="-51">move[id]?</label>
+		</transition>
+		<transition id="id51">
+			<source ref="id5"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="382" y="-127">move[id]?</label>
+		</transition>
+		<transition id="id52">
+			<source ref="id6"/>
+			<target ref="id5"/>
+			<label kind="synchronisation" x="382" y="-187">move[id]?</label>
+		</transition>
+		<transition id="id53">
+			<source ref="id25"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="382" y="-246">move[id]?</label>
+		</transition>
+		<transition id="id54">
+			<source ref="id7"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="722" y="-127">move[id]?</label>
+		</transition>
+		<transition id="id55">
+			<source ref="id8"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="722" y="-178">move[id]?</label>
+		</transition>
+		<transition id="id56">
+			<source ref="id20"/>
+			<target ref="id8"/>
+			<label kind="synchronisation" x="722" y="-246">move[id]?</label>
+		</transition>
+		<transition id="id57">
+			<source ref="id10"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="722" y="-42">move[id]?</label>
+		</transition>
+		<transition id="id58">
+			<source ref="id11"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="722" y="34">move[id]?</label>
+		</transition>
+		<transition id="id59">
+			<source ref="id12"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="722" y="93">move[id]?</label>
+		</transition>
+		<transition id="id60">
+			<source ref="id13"/>
+			<target ref="id12"/>
+			<label kind="synchronisation" x="646" y="170">move[id]?</label>
+		</transition>
+		<transition id="id61">
+			<source ref="id14"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="578" y="153">move[id]?</label>
+		</transition>
+		<transition id="id62">
+			<source ref="id15"/>
+			<target ref="id14"/>
+			<label kind="synchronisation" x="501" y="170">move[id]?</label>
+		</transition>
+		<transition id="id63">
+			<source ref="id16"/>
+			<target ref="id15"/>
+			<label kind="synchronisation" x="442" y="153">move[id]?</label>
+		</transition>
+		<transition id="id64">
+			<source ref="id17"/>
+			<target ref="id16"/>
+			<label kind="synchronisation" x="374" y="170">move[id]?</label>
+		</transition>
+		<transition id="id65">
+			<source ref="id18"/>
+			<target ref="id17"/>
+			<label kind="synchronisation" x="306" y="153">move[id]?</label>
+		</transition>
+		<transition id="id66">
+			<source ref="id19"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="238" y="170">move[id]?</label>
+		</transition>
+		<transition id="id67">
+			<source ref="id28"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="170" y="153">move[id]?</label>
+		</transition>
+		<transition id="id68">
+			<source ref="id21"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="654" y="-306">move[id]?</label>
+		</transition>
+		<transition id="id69">
+			<source ref="id22"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="578" y="-331">move[id]?</label>
+		</transition>
+		<transition id="id70">
+			<source ref="id23"/>
+			<target ref="id22"/>
+			<label kind="synchronisation" x="510" y="-306">move[id]?</label>
+		</transition>
+		<transition id="id71">
+			<source ref="id24"/>
+			<target ref="id23"/>
+			<label kind="synchronisation" x="442" y="-331">move[id]?</label>
+		</transition>
+		<transition id="id72">
+			<source ref="id25"/>
+			<target ref="id24"/>
+			<label kind="synchronisation" x="382" y="-306">move[id]?</label>
+		</transition>
+		<transition id="id73">
+			<source ref="id26"/>
+			<target ref="id25"/>
+			<label kind="synchronisation" x="314" y="-323">move[id]?</label>
+		</transition>
+		<transition id="id74">
+			<source ref="id27"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="238" y="-306">move[id]?</label>
+		</transition>
+		<transition id="id75">
+			<source ref="id31"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="170" y="-323">move[id]?</label>
+		</transition>
+		<transition id="id76">
+			<source ref="id29"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="178" y="85">move[id]?</label>
+		</transition>
+		<transition id="id77">
+			<source ref="id30"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="187" y="25">move[id]?</label>
+		</transition>
+		<transition id="id78">
+			<source ref="id34"/>
+			<target ref="id30"/>
+			<label kind="synchronisation" x="187" y="-51">move[id]?</label>
+		</transition>
+		<transition id="id79">
+			<source ref="id32"/>
+			<target ref="id31"/>
+			<label kind="synchronisation" x="187" y="-238">move[id]?</label>
+		</transition>
+		<transition id="id80">
+			<source ref="id33"/>
+			<target ref="id32"/>
+			<label kind="synchronisation" x="178" y="-178">move[id]?</label>
+		</transition>
+		<transition id="id81">
+			<source ref="id34"/>
+			<target ref="id33"/>
+			<label kind="synchronisation" x="178" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id82">
+			<source ref="id35"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="85" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id83">
+			<source ref="id36"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="34" y="-127">move[id]?</label>
+		</transition>
+		<transition id="id84">
+			<source ref="id37"/>
+			<target ref="id36"/>
+			<label kind="synchronisation" x="-34" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id85">
+			<source ref="id38"/>
+			<target ref="id37"/>
+			<label kind="synchronisation" x="-102" y="-127">move[id]?</label>
+		</transition>
+		<transition id="id86">
+			<source ref="id39"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="-170" y="-102">move[id]?</label>
+		</transition>
+		<transition id="id87">
+			<source ref="id40"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="-246" y="-127">move[id]?</label>
+		</transition>
+		<transition id="id88">
+			<source ref="id41"/>
+			<target ref="id40"/>
+			<label kind="synchronisation" x="-306" y="-110">move[id]?</label>
+		</transition>
+		<transition id="id89">
+			<source ref="id42"/>
+			<target ref="id41"/>
+			<label kind="synchronisation" x="-297" y="-42">move[id]?</label>
+		</transition>
+		<transition id="id90">
+			<source ref="id43"/>
+			<target ref="id42"/>
+			<label kind="synchronisation" x="-297" y="25">move[id]?</label>
+		</transition>
+		<transition id="id91">
+			<source ref="id44"/>
+			<target ref="id43"/>
+			<label kind="synchronisation" x="-297" y="93">move[id]?</label>
+		</transition>
+		<transition id="id92">
+			<source ref="id45"/>
+			<target ref="id44"/>
+			<label kind="synchronisation" x="-297" y="161">move[id]?</label>
+		</transition>
+	</template>
+	<template>
+		<name>EnemyP</name>
+		<parameter>const enemysc_id id</parameter>
+		<declaration>
+clock x; 
+/*
+
+// if square, square=1, if circle square=0;
+// Variabili locali
+int health;
+int speed;
+int damage;
+int spawnTime;
+bool isSquare = isSquare0;
+
+
+// In location `Spawn` (oppure all'inizio del template)
+const int speed = square ? 3 : 1;
+int health = square ? 20 : 10;
+const int damage = square ? 4 : 2;
+
+
+*/</declaration>
+		<location id="id93" x="-132" y="-35">
+			<name x="-142" y="-69">moving</name>
+			<urgent/>
+		</location>
+		<location id="id94" x="-370" y="-35">
+			<name x="-380" y="-69">idle</name>
+		</location>
+		<init ref="id94"/>
+		<transition id="id95">
+			<source ref="id93"/>
+			<target ref="id94"/>
+			<nail x="-268" y="58"/>
+		</transition>
+		<transition id="id96">
+			<source ref="id94"/>
+			<target ref="id93"/>
+			<label kind="guard" x="-349" y="-56">x &gt;= enemysc[id].speed</label>
+			<label kind="synchronisation" x="-242" y="-35">move[id]!</label>
+			<label kind="assignment" x="-302" y="-35">x = 0</label>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+/*
+enemyp = EnemyP(true);
+enemy = Enemy();
+
+enemyp2 = EnemyP(false);
+enemy2 = Enemy();
+// List one or more processes to be composed into a system.
+*/
+
+system Enemy, EnemyP;
+
+</system>
+	<queries>
+		<query>
+			<formula/>
+			<comment/>
+		</query>
+	</queries>
+</nta>
