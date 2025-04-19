@@ -32,464 +32,561 @@ typedef int[0, N_ENEMIES-1] enemy_int;
 typedef struct {
      int speed;
      int initial_health;
-     int demage;
+     int damage;
      int spawn_delay;
 } enemy_t;
 
+/*
 const enemy_t ENEMIES[N_ENEMIES] = {
     {3,20,4,0}, //square 1
     {3,20,4,3}, //square 2
     {3,20,4,6}, //square 3
-    {1,10,2,0}, //circle 1
+    {1,10,2,0}, //circle 1 
     {1,10,2,2}, //circle 2
     {1,10,2,4}  //circle 3
 };
 // definiamo posizione dei nemici e inizializziamoli fuori dalla mappa
+*/
+
+
+const enemy_t ENEMIES[2] = { { 3, 20, 4, 3}, {1, 10, 2, 2} };
+
 
 int coord_x[N_ENEMIES] = {1000, 1000, 1000, 1000, 1000, 1000};
 int coord_y[N_ENEMIES] = {1000, 1000, 1000, 1000, 1000, 1000};
 int enemy_health[N_ENEMIES] = {0, 0, 0, 0, 0, 0};
 
 
-// Turret parameters for Basic, Cannon, and Sniper
-const int BASIC_RANGE = 2;
-const int BASIC_FIRE_SPEED = 2;
-const int BASIC_DAMAGE = 2;
 
-const int CANNON_RANGE = 1;
-const int CANNON_FIRE_SPEED = 7;
-const int CANNON_DAMAGE = 5;
 
-const int SNIPER_RANGE = 4;
-const int SNIPER_FIRE_SPEED = 20;
-const int SNIPER_DAMAGE = 8;
+//Turrets
+const int N_TURRETS = 7;
+typedef int[0, N_TURRETS-1] turret_int;
+
+typedef struct {
+     int shooting_range;
+     int fire_speed;
+     int inflicted_damage;
+     //int coord_x; //coordinate le passiamo come parametro
+     //int coord_y;
+} turret_t;
+
+const turret_t TURRETS[3] = { {2, 2, 2}, {1, 7, 5}, {4, 20, 8} }; //0-basic, 1-cannon, 2-sniper
+/*
+const turret_t TURRETS_ONE[N_TURRETS] = {
+    {2,2,2,5,5},  //BASIC 1
+    {1,7,5,8,2},  //CANNON 1
+    {1,7,5,8,6},  //CANNON 2
+    {1,7,5,14,2},  //CANNON 3
+    {1,7,5,14,6},  //CANNON 4
+    {4,20,8,2,3}, //SNIPER 1
+    {4,20,8,11,5} //SNIPER 2  
+};
+*/
+
 
 // Other shared variables (e.g., game time)
 clock t;
 chan move[N_ENEMIES];
-</declaration>
+//non serve un canale tra torretta e nemico, l'array health nemico è in declarations, pertanto la torretta può accedere e modificare la salute del nemico in questione e qualcora la salute scende sotto 0, puo modificarnre la posizione per farlo uscire dalle mappa</declaration>
+	<template>
+		<name>Turret</name>
+		<parameter>const int type_turret, const int coord_x_turret, const int coord_y_turret</parameter>
+		<declaration>void bang(int i) {
+    enemy_health[i] = enemy_health[i] - TURRETS[type_turret].inflicted_damage; // shoot the enemy
+    if (enemy_health[i] &lt;= 0) { // teleport the enemy outside the map
+        coord_x[i] = 1000;
+        coord_y[i] = 1000;
+    }
+}
+
+int max(int a, int b) {
+    return a &gt; b ? a : b;
+}
+
+bool shoot_enemy() {
+
+    // codice che decide a chi sparare (in: coordinate sue+tutti nemici, raggio, output: int quale nemico)
+    // codice che spara a int e ritorna true se ha sparato (in: danno, int quale nemico, out: bool)
+
+    enemy_int enemy_to_shoot; // which enemy to shoot (if in range)
+    int closest_distance = 1000; // 1000 means no enemy in range
+    int temp_distance;
+    int i;
+    for (i = 0; i &lt; N_ENEMIES; i++) {
+        temp_distance = max(abs(coord_x[i] - coord_x_turret), abs(coord_y[i] - coord_y_turret));
+        if (temp_distance &lt;= TURRETS[type_turret].shooting_range &amp;&amp; temp_distance &lt; closest_distance) { // will shoot to smallest id
+            closest_distance = temp_distance;
+            enemy_to_shoot = i;
+            if (closest_distance == 1) { // shoot if closest_distance is 1: optimization!
+                bang(enemy_to_shoot);
+                return true;
+            }
+        }
+    }
+    if (closest_distance &lt; 1000) { // means I found an enemy in range
+        bang(enemy_to_shoot);
+        return true;
+    }
+    return false;
+}
+
+bool just_shot = false;
+double last_shot = 0;</declaration>
+		<location id="id0" x="-204" y="-34">
+			<name x="-229" y="-76">waiting</name>
+			<label kind="invariant" x="-238" y="-102">just_shot</label>
+			<urgent/>
+		</location>
+		<location id="id1" x="170" y="-34">
+			<name x="136" y="-68">ready_to_shoot</name>
+		</location>
+		<init ref="id1"/>
+		<transition id="id2">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="assignment" x="306" y="0">just_shot = shoot_enemy()</label>
+			<nail x="314" y="-34"/>
+			<nail x="289" y="34"/>
+		</transition>
+		<transition id="id3">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-68" y="76">just_shot</label>
+			<label kind="assignment" x="-76" y="102">last_shot = t</label>
+			<nail x="170" y="68"/>
+			<nail x="-204" y="68"/>
+		</transition>
+		<transition id="id4">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="-136" y="-127">t &gt;= last_shot + TURRETS[type_turret].fire_speed</label>
+			<label kind="assignment" x="-76" y="-76">just_shot = false</label>
+			<nail x="-25" y="-102"/>
+		</transition>
+	</template>
 	<template>
 		<name>Enemy</name>
 		<parameter>const enemy_int id</parameter>
-		<location id="id0" x="646" y="-68">
+		<location id="id5" x="646" y="-68">
 		</location>
-		<location id="id1" x="578" y="-68">
+		<location id="id6" x="578" y="-68">
 		</location>
-		<location id="id2" x="510" y="-68">
+		<location id="id7" x="510" y="-68">
 		</location>
-		<location id="id3" x="442" y="-68">
+		<location id="id8" x="442" y="-68">
 		</location>
-		<location id="id4" x="374" y="-68">
+		<location id="id9" x="374" y="-68">
 		</location>
-		<location id="id5" x="374" y="-136">
+		<location id="id10" x="374" y="-136">
 		</location>
-		<location id="id6" x="374" y="-204">
+		<location id="id11" x="374" y="-204">
 		</location>
-		<location id="id7" x="714" y="-136">
+		<location id="id12" x="714" y="-136">
 		</location>
-		<location id="id8" x="714" y="-204">
+		<location id="id13" x="714" y="-204">
 		</location>
-		<location id="id9" x="714" y="-68">
+		<location id="id14" x="714" y="-68">
 			<name x="731" y="-102">MainTower</name>
 		</location>
-		<location id="id10" x="714" y="0">
+		<location id="id15" x="714" y="0">
 		</location>
-		<location id="id11" x="714" y="68">
+		<location id="id16" x="714" y="68">
 		</location>
-		<location id="id12" x="714" y="136">
+		<location id="id17" x="714" y="136">
 		</location>
-		<location id="id13" x="646" y="136">
+		<location id="id18" x="646" y="136">
 		</location>
-		<location id="id14" x="578" y="136">
+		<location id="id19" x="578" y="136">
 		</location>
-		<location id="id15" x="510" y="136">
+		<location id="id20" x="510" y="136">
 		</location>
-		<location id="id16" x="442" y="136">
+		<location id="id21" x="442" y="136">
 		</location>
-		<location id="id17" x="374" y="136">
+		<location id="id22" x="374" y="136">
 		</location>
-		<location id="id18" x="306" y="136">
+		<location id="id23" x="306" y="136">
 		</location>
-		<location id="id19" x="238" y="136">
+		<location id="id24" x="238" y="136">
 		</location>
-		<location id="id20" x="714" y="-272">
+		<location id="id25" x="714" y="-272">
 		</location>
-		<location id="id21" x="646" y="-272">
+		<location id="id26" x="646" y="-272">
 		</location>
-		<location id="id22" x="578" y="-272">
+		<location id="id27" x="578" y="-272">
 		</location>
-		<location id="id23" x="510" y="-272">
+		<location id="id28" x="510" y="-272">
 		</location>
-		<location id="id24" x="442" y="-272">
+		<location id="id29" x="442" y="-272">
 		</location>
-		<location id="id25" x="374" y="-272">
+		<location id="id30" x="374" y="-272">
 		</location>
-		<location id="id26" x="306" y="-272">
+		<location id="id31" x="306" y="-272">
 		</location>
-		<location id="id27" x="238" y="-272">
+		<location id="id32" x="238" y="-272">
 		</location>
-		<location id="id28" x="170" y="136">
+		<location id="id33" x="170" y="136">
 		</location>
-		<location id="id29" x="170" y="68">
+		<location id="id34" x="170" y="68">
 		</location>
-		<location id="id30" x="170" y="0">
+		<location id="id35" x="170" y="0">
 		</location>
-		<location id="id31" x="170" y="-272">
+		<location id="id36" x="170" y="-272">
 		</location>
-		<location id="id32" x="170" y="-204">
+		<location id="id37" x="170" y="-204">
 		</location>
-		<location id="id33" x="170" y="-136">
+		<location id="id38" x="170" y="-136">
 		</location>
-		<location id="id34" x="170" y="-68">
+		<location id="id39" x="170" y="-68">
 		</location>
-		<location id="id35" x="102" y="-68">
+		<location id="id40" x="102" y="-68">
 		</location>
-		<location id="id36" x="34" y="-68">
+		<location id="id41" x="34" y="-68">
 		</location>
-		<location id="id37" x="-34" y="-68">
+		<location id="id42" x="-34" y="-68">
 		</location>
-		<location id="id38" x="-102" y="-68">
+		<location id="id43" x="-102" y="-68">
 		</location>
-		<location id="id39" x="-170" y="-68">
+		<location id="id44" x="-170" y="-68">
 		</location>
-		<location id="id40" x="-238" y="-68">
+		<location id="id45" x="-238" y="-68">
 		</location>
-		<location id="id41" x="-306" y="-68">
+		<location id="id46" x="-306" y="-68">
 		</location>
-		<location id="id42" x="-306" y="0">
+		<location id="id47" x="-306" y="0">
 		</location>
-		<location id="id43" x="-306" y="68">
+		<location id="id48" x="-306" y="68">
 		</location>
-		<location id="id44" x="-306" y="136">
+		<location id="id49" x="-306" y="136">
 		</location>
-		<location id="id45" x="-306" y="204">
+		<location id="id50" x="-306" y="204">
 		</location>
-		<init ref="id45"/>
-		<transition id="id46">
-			<source ref="id0"/>
-			<target ref="id9"/>
-			<label kind="synchronisation" x="629" y="-51">move[id]?</label>
-			<label kind="assignment" x="569" y="-17">coord_x[id]=15,
-coord_y[id]=4</label>
-		</transition>
-		<transition id="id47">
-			<source ref="id1"/>
-			<target ref="id0"/>
-			<label kind="synchronisation" x="569" y="-34">move[id]?</label>
-			<label kind="assignment" x="527" y="25">coord_x[id]=14,
-coord_y[id]=4</label>
-		</transition>
-		<transition id="id48">
-			<source ref="id2"/>
-			<target ref="id1"/>
-			<label kind="synchronisation" x="510" y="-51">move[id]?</label>
-			<label kind="assignment" x="442" y="-17">coord_x[id]=13,
-coord_y[id]=4</label>
-		</transition>
-		<transition id="id49">
-			<source ref="id3"/>
-			<target ref="id2"/>
-			<label kind="synchronisation" x="433" y="-34">move[id]?</label>
-			<label kind="assignment" x="382" y="25">coord_x[id]=12,
-coord_y[id]=4</label>
-		</transition>
-		<transition id="id50">
-			<source ref="id4"/>
-			<target ref="id3"/>
-			<label kind="synchronisation" x="374" y="-51">move[id]?</label>
-			<label kind="assignment" x="314" y="-17">coord_x[id]=11,
-coord_y[id]=4</label>
-		</transition>
+		<init ref="id50"/>
 		<transition id="id51">
 			<source ref="id5"/>
-			<target ref="id4"/>
-			<label kind="synchronisation" x="382" y="-127">move[id]?</label>
-			<label kind="assignment" x="459" y="-144">coord_x[id]=10,
+			<target ref="id14"/>
+			<label kind="synchronisation" x="629" y="-51">move[id]?</label>
+			<label kind="assignment" x="569" y="-17">coord_x[id]=15,
 coord_y[id]=4</label>
 		</transition>
 		<transition id="id52">
 			<source ref="id6"/>
 			<target ref="id5"/>
+			<label kind="synchronisation" x="569" y="-34">move[id]?</label>
+			<label kind="assignment" x="527" y="25">coord_x[id]=14,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id53">
+			<source ref="id7"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="510" y="-51">move[id]?</label>
+			<label kind="assignment" x="442" y="-17">coord_x[id]=13,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id54">
+			<source ref="id8"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="433" y="-34">move[id]?</label>
+			<label kind="assignment" x="382" y="25">coord_x[id]=12,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id55">
+			<source ref="id9"/>
+			<target ref="id8"/>
+			<label kind="synchronisation" x="374" y="-51">move[id]?</label>
+			<label kind="assignment" x="314" y="-17">coord_x[id]=11,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id56">
+			<source ref="id10"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="382" y="-127">move[id]?</label>
+			<label kind="assignment" x="459" y="-144">coord_x[id]=10,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id57">
+			<source ref="id11"/>
+			<target ref="id10"/>
 			<label kind="synchronisation" x="382" y="-187">move[id]?</label>
 			<label kind="assignment" x="467" y="-195">coord_x[id]=10,
 coord_y[id]=5</label>
 		</transition>
-		<transition id="id53">
-			<source ref="id25"/>
-			<target ref="id6"/>
+		<transition id="id58">
+			<source ref="id30"/>
+			<target ref="id11"/>
 			<label kind="synchronisation" x="382" y="-246">move[id]?</label>
 			<label kind="assignment" x="467" y="-255">coord_x[id]=10,
 coord_y[id]=6</label>
 		</transition>
-		<transition id="id54">
-			<source ref="id7"/>
-			<target ref="id9"/>
+		<transition id="id59">
+			<source ref="id12"/>
+			<target ref="id14"/>
 			<label kind="synchronisation" x="722" y="-127">move[id]?</label>
 			<label kind="assignment" x="807" y="-136">coord_x[id]=15,
 coord_y[id]=4</label>
 		</transition>
-		<transition id="id55">
-			<source ref="id8"/>
-			<target ref="id7"/>
+		<transition id="id60">
+			<source ref="id13"/>
+			<target ref="id12"/>
 			<label kind="synchronisation" x="722" y="-178">move[id]?</label>
 			<label kind="assignment" x="807" y="-187">coord_x[id]=15,
 coord_y[id]=5</label>
 		</transition>
-		<transition id="id56">
-			<source ref="id20"/>
-			<target ref="id8"/>
+		<transition id="id61">
+			<source ref="id25"/>
+			<target ref="id13"/>
 			<label kind="synchronisation" x="722" y="-246">move[id]?</label>
 			<label kind="assignment" x="807" y="-255">coord_x[id]=15,
 coord_y[id]=6</label>
 		</transition>
-		<transition id="id57">
-			<source ref="id10"/>
-			<target ref="id9"/>
+		<transition id="id62">
+			<source ref="id15"/>
+			<target ref="id14"/>
 			<label kind="synchronisation" x="722" y="-42">move[id]?</label>
 			<label kind="assignment" x="807" y="-51">coord_x[id]=15,
 coord_y[id]=4</label>
 		</transition>
-		<transition id="id58">
-			<source ref="id11"/>
-			<target ref="id10"/>
+		<transition id="id63">
+			<source ref="id16"/>
+			<target ref="id15"/>
 			<label kind="synchronisation" x="722" y="34">move[id]?</label>
 			<label kind="assignment" x="807" y="25">coord_x[id]=15,
 coord_y[id]=3</label>
 		</transition>
-		<transition id="id59">
-			<source ref="id12"/>
-			<target ref="id11"/>
+		<transition id="id64">
+			<source ref="id17"/>
+			<target ref="id16"/>
 			<label kind="synchronisation" x="722" y="93">move[id]?</label>
 			<label kind="assignment" x="807" y="85">coord_x[id]=15,
 coord_y[id]=2</label>
 		</transition>
-		<transition id="id60">
-			<source ref="id13"/>
-			<target ref="id12"/>
-			<label kind="synchronisation" x="646" y="170">move[id]?</label>
-			<label kind="assignment" x="637" y="238">coord_x[id]=15,
-coord_y[id]=1</label>
-		</transition>
-		<transition id="id61">
-			<source ref="id14"/>
-			<target ref="id13"/>
-			<label kind="synchronisation" x="578" y="153">move[id]?</label>
-			<label kind="assignment" x="569" y="195">coord_x[id]=14,
-coord_y[id]=1</label>
-		</transition>
-		<transition id="id62">
-			<source ref="id15"/>
-			<target ref="id14"/>
-			<label kind="synchronisation" x="501" y="170">move[id]?</label>
-			<label kind="assignment" x="501" y="238">coord_x[id]=13,
-coord_y[id]=1</label>
-		</transition>
-		<transition id="id63">
-			<source ref="id16"/>
-			<target ref="id15"/>
-			<label kind="synchronisation" x="442" y="153">move[id]?</label>
-			<label kind="assignment" x="433" y="195">coord_x[id]=12,
-coord_y[id]=1</label>
-		</transition>
-		<transition id="id64">
-			<source ref="id17"/>
-			<target ref="id16"/>
-			<label kind="synchronisation" x="374" y="170">move[id]?</label>
-			<label kind="assignment" x="365" y="238">coord_x[id]=11,
-coord_y[id]=1</label>
-		</transition>
 		<transition id="id65">
 			<source ref="id18"/>
 			<target ref="id17"/>
-			<label kind="synchronisation" x="306" y="153">move[id]?</label>
-			<label kind="assignment" x="289" y="195">coord_x[id]=10,
+			<label kind="synchronisation" x="646" y="170">move[id]?</label>
+			<label kind="assignment" x="637" y="238">coord_x[id]=15,
 coord_y[id]=1</label>
 		</transition>
 		<transition id="id66">
 			<source ref="id19"/>
 			<target ref="id18"/>
-			<label kind="synchronisation" x="238" y="170">move[id]?</label>
-			<label kind="assignment" x="221" y="238">coord_x[id]=9,
+			<label kind="synchronisation" x="578" y="153">move[id]?</label>
+			<label kind="assignment" x="569" y="195">coord_x[id]=14,
 coord_y[id]=1</label>
 		</transition>
 		<transition id="id67">
-			<source ref="id28"/>
+			<source ref="id20"/>
 			<target ref="id19"/>
-			<label kind="synchronisation" x="170" y="153">move[id]?</label>
-			<label kind="assignment" x="144" y="195">coord_x[id]=8,
+			<label kind="synchronisation" x="501" y="170">move[id]?</label>
+			<label kind="assignment" x="501" y="238">coord_x[id]=13,
 coord_y[id]=1</label>
 		</transition>
 		<transition id="id68">
 			<source ref="id21"/>
 			<target ref="id20"/>
-			<label kind="synchronisation" x="654" y="-306">move[id]?</label>
-			<label kind="assignment" x="637" y="-374">coord_x[id]=15,
-coord_y[id]=7</label>
+			<label kind="synchronisation" x="442" y="153">move[id]?</label>
+			<label kind="assignment" x="433" y="195">coord_x[id]=12,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id69">
 			<source ref="id22"/>
 			<target ref="id21"/>
-			<label kind="synchronisation" x="578" y="-331">move[id]?</label>
-			<label kind="assignment" x="569" y="-416">coord_x[id]=14,
-coord_y[id]=7</label>
+			<label kind="synchronisation" x="374" y="170">move[id]?</label>
+			<label kind="assignment" x="365" y="238">coord_x[id]=11,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id70">
 			<source ref="id23"/>
 			<target ref="id22"/>
-			<label kind="synchronisation" x="510" y="-306">move[id]?</label>
-			<label kind="assignment" x="493" y="-365">coord_x[id]=13,
-coord_y[id]=7</label>
+			<label kind="synchronisation" x="306" y="153">move[id]?</label>
+			<label kind="assignment" x="289" y="195">coord_x[id]=10,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id71">
 			<source ref="id24"/>
 			<target ref="id23"/>
-			<label kind="synchronisation" x="442" y="-331">move[id]?</label>
-			<label kind="assignment" x="433" y="-416">coord_x[id]=12,
-coord_y[id]=7</label>
+			<label kind="synchronisation" x="238" y="170">move[id]?</label>
+			<label kind="assignment" x="221" y="238">coord_x[id]=9,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id72">
-			<source ref="id25"/>
+			<source ref="id33"/>
 			<target ref="id24"/>
-			<label kind="synchronisation" x="382" y="-306">move[id]?</label>
-			<label kind="assignment" x="357" y="-365">coord_x[id]=11,
-coord_y[id]=7</label>
+			<label kind="synchronisation" x="170" y="153">move[id]?</label>
+			<label kind="assignment" x="144" y="195">coord_x[id]=8,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id73">
 			<source ref="id26"/>
 			<target ref="id25"/>
-			<label kind="synchronisation" x="314" y="-323">move[id]?</label>
-			<label kind="assignment" x="297" y="-416">coord_x[id]=10,
+			<label kind="synchronisation" x="654" y="-306">move[id]?</label>
+			<label kind="assignment" x="637" y="-374">coord_x[id]=15,
 coord_y[id]=7</label>
 		</transition>
 		<transition id="id74">
 			<source ref="id27"/>
 			<target ref="id26"/>
-			<label kind="synchronisation" x="238" y="-306">move[id]?</label>
-			<label kind="assignment" x="221" y="-365">coord_x[id]=9,
+			<label kind="synchronisation" x="578" y="-331">move[id]?</label>
+			<label kind="assignment" x="569" y="-416">coord_x[id]=14,
 coord_y[id]=7</label>
 		</transition>
 		<transition id="id75">
-			<source ref="id31"/>
+			<source ref="id28"/>
 			<target ref="id27"/>
-			<label kind="synchronisation" x="170" y="-323">move[id]?</label>
-			<label kind="assignment" x="153" y="-416">coord_x[id]=8,
+			<label kind="synchronisation" x="510" y="-306">move[id]?</label>
+			<label kind="assignment" x="493" y="-365">coord_x[id]=13,
 coord_y[id]=7</label>
 		</transition>
 		<transition id="id76">
 			<source ref="id29"/>
 			<target ref="id28"/>
-			<label kind="synchronisation" x="85" y="85">move[id]?</label>
-			<label kind="assignment" x="178" y="76">coord_x[id]=7,
-coord_y[id]=1</label>
+			<label kind="synchronisation" x="442" y="-331">move[id]?</label>
+			<label kind="assignment" x="433" y="-416">coord_x[id]=12,
+coord_y[id]=7</label>
 		</transition>
 		<transition id="id77">
 			<source ref="id30"/>
 			<target ref="id29"/>
-			<label kind="synchronisation" x="85" y="25">move[id]?</label>
-			<label kind="assignment" x="178" y="17">coord_x[id]=7,
-coord_y[id]=2</label>
+			<label kind="synchronisation" x="382" y="-306">move[id]?</label>
+			<label kind="assignment" x="357" y="-365">coord_x[id]=11,
+coord_y[id]=7</label>
 		</transition>
 		<transition id="id78">
-			<source ref="id34"/>
+			<source ref="id31"/>
 			<target ref="id30"/>
-			<label kind="synchronisation" x="187" y="-59">move[id]?</label>
-			<label kind="assignment" x="187" y="-42">coord_x[id]=7,
-coord_y[id]=3</label>
+			<label kind="synchronisation" x="314" y="-323">move[id]?</label>
+			<label kind="assignment" x="297" y="-416">coord_x[id]=10,
+coord_y[id]=7</label>
 		</transition>
 		<transition id="id79">
 			<source ref="id32"/>
 			<target ref="id31"/>
-			<label kind="synchronisation" x="187" y="-238">move[id]?</label>
-			<label kind="assignment" x="229" y="-221">coord_x[id]=7,
+			<label kind="synchronisation" x="238" y="-306">move[id]?</label>
+			<label kind="assignment" x="221" y="-365">coord_x[id]=9,
 coord_y[id]=7</label>
 		</transition>
 		<transition id="id80">
-			<source ref="id33"/>
+			<source ref="id36"/>
 			<target ref="id32"/>
-			<label kind="synchronisation" x="178" y="-178">move[id]?</label>
-			<label kind="assignment" x="229" y="-161">coord_x[id]=7,
-coord_y[id]=6</label>
+			<label kind="synchronisation" x="170" y="-323">move[id]?</label>
+			<label kind="assignment" x="153" y="-416">coord_x[id]=8,
+coord_y[id]=7</label>
 		</transition>
 		<transition id="id81">
 			<source ref="id34"/>
 			<target ref="id33"/>
-			<label kind="synchronisation" x="178" y="-102">move[id]?</label>
-			<label kind="assignment" x="255" y="-119">coord_x[id]=7,
-coord_y[id]=5</label>
+			<label kind="synchronisation" x="85" y="85">move[id]?</label>
+			<label kind="assignment" x="178" y="76">coord_x[id]=7,
+coord_y[id]=1</label>
 		</transition>
 		<transition id="id82">
 			<source ref="id35"/>
 			<target ref="id34"/>
-			<label kind="synchronisation" x="85" y="-102">move[id]?</label>
-			<label kind="assignment" x="42" y="-51">coord_x[id]=7,
-coord_y[id]=4</label>
+			<label kind="synchronisation" x="85" y="25">move[id]?</label>
+			<label kind="assignment" x="178" y="17">coord_x[id]=7,
+coord_y[id]=2</label>
 		</transition>
 		<transition id="id83">
-			<source ref="id36"/>
+			<source ref="id39"/>
 			<target ref="id35"/>
-			<label kind="synchronisation" x="34" y="-127">move[id]?</label>
-			<label kind="assignment" x="17" y="-221">coord_x[id]=6,
-coord_y[id]=4</label>
+			<label kind="synchronisation" x="187" y="-59">move[id]?</label>
+			<label kind="assignment" x="187" y="-42">coord_x[id]=7,
+coord_y[id]=3</label>
 		</transition>
 		<transition id="id84">
 			<source ref="id37"/>
 			<target ref="id36"/>
-			<label kind="synchronisation" x="-34" y="-102">move[id]?</label>
-			<label kind="assignment" x="-42" y="-170">coord_x[id]=5,
-coord_y[id]=4</label>
+			<label kind="synchronisation" x="187" y="-238">move[id]?</label>
+			<label kind="assignment" x="229" y="-221">coord_x[id]=7,
+coord_y[id]=7</label>
 		</transition>
 		<transition id="id85">
 			<source ref="id38"/>
 			<target ref="id37"/>
-			<label kind="synchronisation" x="-102" y="-127">move[id]?</label>
-			<label kind="assignment" x="-110" y="-221">coord_x[id]=4,
-coord_y[id]=4</label>
+			<label kind="synchronisation" x="178" y="-178">move[id]?</label>
+			<label kind="assignment" x="229" y="-161">coord_x[id]=7,
+coord_y[id]=6</label>
 		</transition>
 		<transition id="id86">
 			<source ref="id39"/>
 			<target ref="id38"/>
-			<label kind="synchronisation" x="-170" y="-102">move[id]?</label>
-			<label kind="assignment" x="-187" y="-170">coord_x[id]=3,
-coord_y[id]=4</label>
+			<label kind="synchronisation" x="178" y="-102">move[id]?</label>
+			<label kind="assignment" x="255" y="-119">coord_x[id]=7,
+coord_y[id]=5</label>
 		</transition>
 		<transition id="id87">
 			<source ref="id40"/>
 			<target ref="id39"/>
-			<label kind="synchronisation" x="-246" y="-127">move[id]?</label>
-			<label kind="assignment" x="-263" y="-221">coord_x[id]=2,
+			<label kind="synchronisation" x="85" y="-102">move[id]?</label>
+			<label kind="assignment" x="42" y="-51">coord_x[id]=7,
 coord_y[id]=4</label>
 		</transition>
 		<transition id="id88">
 			<source ref="id41"/>
 			<target ref="id40"/>
-			<label kind="synchronisation" x="-306" y="-110">move[id]?</label>
-			<label kind="assignment" x="-340" y="-161">coord_x[id]=1,
+			<label kind="synchronisation" x="34" y="-127">move[id]?</label>
+			<label kind="assignment" x="17" y="-221">coord_x[id]=6,
 coord_y[id]=4</label>
 		</transition>
 		<transition id="id89">
 			<source ref="id42"/>
 			<target ref="id41"/>
-			<label kind="synchronisation" x="-297" y="-42">move[id]?</label>
-			<label kind="assignment" x="-204" y="-42">coord_x[id]=0,
+			<label kind="synchronisation" x="-34" y="-102">move[id]?</label>
+			<label kind="assignment" x="-42" y="-170">coord_x[id]=5,
 coord_y[id]=4</label>
 		</transition>
 		<transition id="id90">
 			<source ref="id43"/>
 			<target ref="id42"/>
-			<label kind="synchronisation" x="-297" y="25">move[id]?</label>
-			<label kind="assignment" x="-204" y="17">coord_x[id]=0,
-coord_y[id]=3</label>
+			<label kind="synchronisation" x="-102" y="-127">move[id]?</label>
+			<label kind="assignment" x="-110" y="-221">coord_x[id]=4,
+coord_y[id]=4</label>
 		</transition>
 		<transition id="id91">
 			<source ref="id44"/>
 			<target ref="id43"/>
-			<label kind="synchronisation" x="-297" y="93">move[id]?</label>
-			<label kind="assignment" x="-204" y="85">coord_x[id]=0,
-coord_y[id]=2</label>
+			<label kind="synchronisation" x="-170" y="-102">move[id]?</label>
+			<label kind="assignment" x="-187" y="-170">coord_x[id]=3,
+coord_y[id]=4</label>
 		</transition>
 		<transition id="id92">
 			<source ref="id45"/>
 			<target ref="id44"/>
+			<label kind="synchronisation" x="-246" y="-127">move[id]?</label>
+			<label kind="assignment" x="-263" y="-221">coord_x[id]=2,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id93">
+			<source ref="id46"/>
+			<target ref="id45"/>
+			<label kind="synchronisation" x="-306" y="-110">move[id]?</label>
+			<label kind="assignment" x="-340" y="-161">coord_x[id]=1,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id94">
+			<source ref="id47"/>
+			<target ref="id46"/>
+			<label kind="synchronisation" x="-297" y="-42">move[id]?</label>
+			<label kind="assignment" x="-204" y="-42">coord_x[id]=0,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id95">
+			<source ref="id48"/>
+			<target ref="id47"/>
+			<label kind="synchronisation" x="-297" y="25">move[id]?</label>
+			<label kind="assignment" x="-204" y="17">coord_x[id]=0,
+coord_y[id]=3</label>
+		</transition>
+		<transition id="id96">
+			<source ref="id49"/>
+			<target ref="id48"/>
+			<label kind="synchronisation" x="-297" y="93">move[id]?</label>
+			<label kind="assignment" x="-204" y="85">coord_x[id]=0,
+coord_y[id]=2</label>
+		</transition>
+		<transition id="id97">
+			<source ref="id50"/>
+			<target ref="id49"/>
 			<label kind="synchronisation" x="-297" y="161">move[id]?</label>
 			<label kind="assignment" x="-212" y="161">coord_x[id] = 0,
 coord_y[id] = 1</label>
@@ -497,56 +594,66 @@ coord_y[id] = 1</label>
 	</template>
 	<template>
 		<name>EnemyP</name>
-		<parameter>const enemy_int id</parameter>
-		<declaration>double next_move = ENEMIES[id].spawn_delay + ENEMIES[id].speed;
-</declaration>
-		<location id="id93" x="0" y="-34">
-			<name x="-8" y="-68">moving</name>
+		<parameter>const enemy_int id, const int type, const int serial_number</parameter>
+		<declaration>
+const double birth_time =  ENEMIES[type].spawn_delay * serial_number;
+double next_move = birth_time + ENEMIES[type].speed;
+
+// void __ON_CONSTRUCT__(); usare per inizializzare</declaration>
+		<location id="id98" x="-170" y="-34">
+			<name x="-178" y="-68">moving</name>
 			<committed/>
 		</location>
-		<location id="id94" x="-374" y="-34">
-			<name x="-391" y="-68">idle</name>
-			<label kind="invariant" x="-399" y="-93">t &lt;= next_move</label>
+		<location id="id99" x="-544" y="-34">
+			<name x="-561" y="-68">idle</name>
+			<label kind="invariant" x="-569" y="-93">t &lt;= next_move</label>
 		</location>
-		<location id="id95" x="-714" y="-34">
-			<name x="-748" y="-68">not_born</name>
-			<label kind="invariant" x="-841" y="-93">t &lt;= ENEMIES[id].spawn_delay</label>
+		<location id="id100" x="-1156" y="-34">
+			<name x="-1190" y="-68">not_born</name>
+			<label kind="invariant" x="-1309" y="-93">t &lt;= ENEMIES[type].spawn_delay * serial_number</label>
 		</location>
-		<init ref="id95"/>
-		<transition id="id96">
-			<source ref="id95"/>
-			<target ref="id94"/>
-			<label kind="guard" x="-646" y="-59">t &gt;= ENEMIES[id].spawn_delay</label>
-			<label kind="assignment" x="-748" y="-17">enemy_health[id]=ENEMIES[id].initial_health,
+		<init ref="id100"/>
+		<transition id="id101">
+			<source ref="id100"/>
+			<target ref="id99"/>
+			<label kind="guard" x="-816" y="-59">t &gt;= birth_time</label>
+			<label kind="assignment" x="-1003" y="-25">enemy_health[id]=ENEMIES[type].initial_health,
 coord_x[id]=0,
 coord_y[id]=0</label>
 		</transition>
-		<transition id="id97">
-			<source ref="id93"/>
-			<target ref="id94"/>
-			<label kind="synchronisation" x="-221" y="77">move[id]!</label>
-			<nail x="0" y="68"/>
-			<nail x="-374" y="68"/>
+		<transition id="id102">
+			<source ref="id98"/>
+			<target ref="id99"/>
+			<label kind="synchronisation" x="-391" y="77">move[id]!</label>
+			<nail x="-170" y="68"/>
+			<nail x="-544" y="68"/>
 		</transition>
-		<transition id="id98">
-			<source ref="id94"/>
-			<target ref="id93"/>
-			<label kind="guard" x="-246" y="-59">t &gt;= next_move</label>
-			<label kind="assignment" x="-357" y="-17">next_move = ENEMIES[id].speed + next_move</label>
+		<transition id="id103">
+			<source ref="id99"/>
+			<target ref="id98"/>
+			<label kind="guard" x="-416" y="-59">t &gt;= next_move</label>
+			<label kind="assignment" x="-527" y="-17">next_move = ENEMIES[type].speed + next_move</label>
 		</transition>
 	</template>
-	<system>// Place template instantiations here.
-/*
-enemyp = EnemyP(true);
-enemy = Enemy();
+	<system>// Instantiate enemies
+Enemy0 = EnemyP(0, 0, 0);
+Enemy1 = EnemyP(1, 0, 1);
+Enemy2 = EnemyP(2, 0, 2);
+Enemy3 = EnemyP(3, 1, 0);
+Enemy4 = EnemyP(4, 1, 1);
+Enemy5 = EnemyP(5, 1, 2);
 
-enemyp2 = EnemyP(false);
-enemy2 = Enemy();
-// List one or more processes to be composed into a system.
-*/
+Turret0 = Turret(0, 5, 5);
+Turret1 = Turret(1, 8, 2);
+Turret2 = Turret(1, 8, 6);
+Turret3 = Turret(1, 14, 2);
+Turret4 = Turret(1, 14, 6);
+Turret5 = Turret(2, 2, 3);
+Turret6 = Turret(2, 11, 5);
 
-system Enemy, EnemyP;
-
+system Enemy,
+       Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
+       Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6;
 </system>
 	<queries>
 		<query>
