@@ -86,14 +86,16 @@ chan shot[N_TURRETS];
 //non serve un canale tra torretta e nemico, l'array health nemico è in declarations, pertanto la torretta può accedere e modificare la salute del nemico in questione e qualcora la salute scende sotto 0, puo modificarnre la posizione per farlo uscire dalle mappa
 
 //campiamo come concludere il gioco
-bool end_game=false;</declaration>
+bool end_game=false;
+
+clock t;</declaration>
 	<template>
 		<name>GameTime</name>
 		<declaration>// ci serve per gestire il caso di fine a causa dello scattare/terminare del time out
 clock c;</declaration>
 		<location id="id0" x="-391" y="-51">
 			<name x="-467" y="-85">game_on</name>
-			<label kind="invariant" x="-450" y="-25">c&lt;=84 &amp;&amp; !end_game</label>
+			<label kind="invariant" x="-450" y="-25">t&lt;=84 &amp;&amp; !end_game</label>
 		</location>
 		<location id="id1" x="-51" y="-51">
 			<name x="-34" y="-85">game_end</name>
@@ -109,14 +111,20 @@ clock c;</declaration>
 		<transition id="id3">
 			<source ref="id0"/>
 			<target ref="id1"/>
-			<label kind="guard" x="-263" y="-76">c&gt;=84</label>
+			<label kind="guard" x="-263" y="-76">t&gt;=84</label>
 			<label kind="assignment" x="-382" y="-42">end_game=true</label>
 		</transition>
 	</template>
 	<template>
 		<name>Turret</name>
 		<parameter>const int id, const int type_turret, const int coord_x_turret, const int coord_y_turret</parameter>
-		<declaration>void bang(int i) {
+		<declaration>bool just_shot = false;
+
+int max(int a, int b) {
+    return a &gt; b ? a : b;
+}
+
+void bang(int i) {
     int j;
     bool boom=false; 
     enemy_health[i] = enemy_health[i] - TURRETS[type_turret].inflicted_damage; // shoot the enemy
@@ -126,20 +134,15 @@ clock c;</declaration>
             if(alive[j]){
                 boom=true;
             }
-          }
-        if(!boom) { //se i=6 vuol dire che non sono uscita dal for a causa del break, ma perchè ho scorso tutto l'array
+        }
+        if(!boom) {
             end_game=true;
         }
-
     }
+    just_shot = true;
 }
 
-int max(int a, int b) {
-    return a &gt; b ? a : b;
-}
-
-bool shoot_enemy() {
-
+void scan_for_enemies() {
     // codice che decide a chi sparare (in: coordinate sue+tutti nemici, raggio, output: int quale nemico)
     // codice che spara a int e ritorna true se ha sparato (in: danno, int quale nemico, out: bool)
 
@@ -148,27 +151,27 @@ bool shoot_enemy() {
     int temp_distance;
     int i;
     for (i = 0; i &lt; N_ENEMIES; i++) { //scorre tutto l'array e trova il nemico piu vicino alla torretta a cui sparare
-      if(alive[i]){ //è vero e il nemico è vivo
-        temp_distance = max(abs(coord_x[i] - coord_x_turret), abs(coord_y[i] - coord_y_turret));
-        if (temp_distance &lt;= TURRETS[type_turret].shooting_range &amp;&amp; temp_distance &lt; closest_distance) { // will shoot to smallest id //aggiorniamo la closest distance solo se entra nel range di attacco della torertta
-            closest_distance = temp_distance;
-            enemy_to_shoot = i;
-            if (closest_distance == 1) { // shoot if closest_distance is 1: optimization!
-                bang(enemy_to_shoot);
-                return true;
+        if(alive[i]){ //è vero e il nemico è vivo
+            temp_distance = max(abs(coord_x[i] - coord_x_turret), abs(coord_y[i] - coord_y_turret));
+            if (temp_distance &lt;= TURRETS[type_turret].shooting_range &amp;&amp; temp_distance &lt; closest_distance) { // will shoot to smallest id //aggiorniamo la closest distance solo se entra nel range di attacco della torertta
+                closest_distance = temp_distance;
+                enemy_to_shoot = i;
+                if (closest_distance == 1) { // shoot if closest_distance is 1: optimization!
+                    bang(enemy_to_shoot);
+                    return;
+                }
             }
         }
     }
-    }
 
-    if (closest_distance &lt; 1000) { // means I found an enemy in range --- spara effettivamnete al nemico se la sua distanza dalla torretta è maggiore di 1
+    if (closest_distance &lt; 1000) { // means I found an enemy in range
         bang(enemy_to_shoot);
-        return true;
+        return;
     }
-    return false;
-}
 
-bool just_shot = false;
+    just_shot = false;
+    return;
+}
 </declaration>
 		<location id="id4" x="-246" y="170">
 		</location>
@@ -193,7 +196,7 @@ bool just_shot = false;
 			<source ref="id4"/>
 			<target ref="id5"/>
 			<label kind="synchronisation" x="-51" y="-8">scan[id]?</label>
-			<label kind="assignment" x="-119" y="93">just_shot = shoot_enemy()</label>
+			<label kind="assignment" x="-102" y="93">scan_for_enemies()</label>
 			<nail x="-34" y="25"/>
 		</transition>
 	</template>
@@ -697,63 +700,56 @@ coord_y[id] = 1</label>
 clock c; // internal clock
 
 // void __ON_CONSTRUCT__(); usare per inizializzare</declaration>
-		<location id="id112" x="-170" y="-34">
-			<name x="-178" y="-68">moving</name>
-			<urgent/>
-		</location>
-		<location id="id113" x="-544" y="-34">
+		<location id="id112" x="-544" y="-34">
 			<name x="-578" y="-76">idle</name>
 			<label kind="invariant" x="-790" y="-102">c &lt;= ENEMIES[type].speed &amp;&amp;
           !end_game</label>
 		</location>
-		<location id="id114" x="-1156" y="-34">
+		<location id="id113" x="-1156" y="-34">
 			<name x="-1190" y="-68">not_born</name>
-			<label kind="invariant" x="-1368" y="-102">c &lt;= ENEMIES[type].spawn_delay * serial_number &amp;&amp; !end_game</label>
+			<label kind="invariant" x="-1368" y="-102">t &lt;= ENEMIES[type].spawn_delay * serial_number &amp;&amp; !end_game</label>
 		</location>
-		<location id="id115" x="-68" y="-238">
+		<location id="id114" x="-68" y="-238">
 			<name x="-78" y="-272">outside</name>
 		</location>
-		<init ref="id114"/>
+		<init ref="id113"/>
+		<transition id="id115">
+			<source ref="id112"/>
+			<target ref="id112"/>
+			<label kind="guard" x="-374" y="-85">c &gt;= ENEMIES[type].speed &amp;&amp;
+!outside_map[id] &amp;&amp; !end_game</label>
+			<label kind="synchronisation" x="-229" y="0">move[id]!</label>
+			<label kind="assignment" x="-408" y="42">c = 0</label>
+			<nail x="-238" y="-34"/>
+			<nail x="-238" y="68"/>
+			<nail x="-544" y="68"/>
+		</transition>
 		<transition id="id116">
-			<source ref="id113"/>
-			<target ref="id115"/>
+			<source ref="id112"/>
+			<target ref="id114"/>
 			<label kind="guard" x="-484" y="-272">end_game</label>
 			<nail x="-544" y="-238"/>
 		</transition>
 		<transition id="id117">
-			<source ref="id114"/>
-			<target ref="id115"/>
+			<source ref="id113"/>
+			<target ref="id114"/>
 			<label kind="guard" x="-1138" y="102">end_game</label>
 			<nail x="-1156" y="136"/>
 			<nail x="-68" y="136"/>
 		</transition>
 		<transition id="id118">
-			<source ref="id113"/>
-			<target ref="id115"/>
+			<source ref="id112"/>
+			<target ref="id114"/>
 			<label kind="guard" x="-510" y="-178">c &gt;= ENEMIES[type].speed &amp;&amp;
 outside_map[id]</label>
 		</transition>
 		<transition id="id119">
-			<source ref="id114"/>
-			<target ref="id113"/>
-			<label kind="guard" x="-986" y="-59">c &gt;= ENEMIES[type].spawn_delay * serial_number</label>
+			<source ref="id113"/>
+			<target ref="id112"/>
+			<label kind="guard" x="-986" y="-59">t &gt;= ENEMIES[type].spawn_delay * serial_number</label>
 			<label kind="assignment" x="-1012" y="-25">enemy_health[id]=ENEMIES[type].initial_health,
 alive[id]=true,
 c = 0</label>
-		</transition>
-		<transition id="id120">
-			<source ref="id112"/>
-			<target ref="id113"/>
-			<nail x="-170" y="68"/>
-			<nail x="-544" y="68"/>
-		</transition>
-		<transition id="id121">
-			<source ref="id113"/>
-			<target ref="id112"/>
-			<label kind="guard" x="-442" y="-85">c &gt;= ENEMIES[type].speed &amp;&amp;
-!outside_map[id] &amp;&amp; !end_game</label>
-			<label kind="synchronisation" x="-425" y="-8">move[id]!</label>
-			<label kind="assignment" x="-408" y="-34">c = 0</label>
 		</transition>
 	</template>
 	<system>// Instantiate enemies
@@ -795,10 +791,12 @@ system Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
        
 </system>
 	<queries>
+		<option key="--diagnostic" value="0"/>
 		<query>
 			<formula>A[] not deadlock</formula>
 			<comment/>
-			<result outcome="failure" type="quality" timestamp="2025-04-22 23:53:38 +0200">
+			<result outcome="failure" type="quality" timestamp="2025-04-23 22:50:01 +0200">
+				<option key="--diagnostic" value="0"/>
 			</result>
 		</query>
 	</queries>
