@@ -2,6 +2,8 @@
 <!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
 <nta>
 	<declaration>// ENEMIES
+const int SQUARE = 0;
+const int CIRCLE = 1;
 const int N_ENEMIES = 6;
 typedef int[0, N_ENEMIES-1] enemy_int;
 
@@ -30,6 +32,8 @@ const turret_t TURRETS[3] = { {2, 2, 2}, {1, 7, 5}, {4, 20, 8} }; // 0-basic, 1-
 int coord_x[N_ENEMIES];
 int coord_y[N_ENEMIES];
 int enemy_health[N_ENEMIES];
+int enemy_type[N_ENEMIES];
+int birth_time[N_ENEMIES];
 bool alive[N_ENEMIES];
 int main_tower_reached_time[N_ENEMIES];
 bool end_game = false;
@@ -123,33 +127,48 @@ void bang(int i) {
 }
 
 void scan_for_enemies() {
-    enemy_int enemy_to_shoot; // which enemy to shoot, if any
-    int closest_distance = 1000; // 1000 means no enemy in range
-    int temp_distance; // distance of last enemy found
-    int i; // iterator
-    for (i = 0; i &lt; N_ENEMIES; i++) { // for every enemy
-        if(alive[i]){ // for every ALIVE enemy
-            temp_distance = max(abs(coord_x[i] - coord_x_turret), abs(coord_y[i] - coord_y_turret)); // distance from the turret
-            if (temp_distance &lt;= TURRETS[type_turret].shooting_range &amp;&amp; temp_distance &lt; closest_distance) { // if in range
-                closest_distance = temp_distance; // update distance
-                enemy_to_shoot = i; // update enemy id to shoot
-                if (closest_distance == 1) { // shoot if closest_distance is 1: optimization!
-                    bang(enemy_to_shoot); // shoot him!
-                    return;
+    int enemy_to_shoot = -1;          // which enemy to shoot (-1 means none)
+    int closest_distance = TURRETS[type_turret].shooting_range + 1;
+    int earliest_birth_time = -1;
+    int i;                            // iterator
+    int distance;                     // current enemy distance
+
+    for (i = 0; i &lt; N_ENEMIES; i++) {
+        if (alive[i]) {
+            distance = max(abs(coord_x[i] - coord_x_turret), 
+                        abs(coord_y[i] - coord_y_turret));
+
+            if (distance &lt;= TURRETS[type_turret].shooting_range) {
+                if (distance &lt; closest_distance) {
+                    // New closest enemy found
+                    closest_distance = distance;
+                    enemy_to_shoot = i;
+                    earliest_birth_time = birth_time[i];
+                } 
+                else if (distance == closest_distance) {
+                    // Tie-breaking needed
+                    if (birth_time[i] &lt; earliest_birth_time) {
+                        // Prefer enemy that spawned earlier
+                        enemy_to_shoot = i;
+                        earliest_birth_time = birth_time[i];
+                    }
+                    else if (birth_time[i] == earliest_birth_time &amp;&amp; enemy_type[i] == SQUARE) {
+                        // If same spawn time, prefer squares (type 0)
+                        enemy_to_shoot = i;
+                        earliest_birth_time = birth_time[i];
+                    }
                 }
             }
         }
     }
 
-    if (closest_distance &lt; 1000) { // means I found an enemy in range
-        bang(enemy_to_shoot); // shoot him!
-        return;
+    if (enemy_to_shoot != -1) {
+        bang(enemy_to_shoot);
+        just_shot = true;
+    } else {
+        just_shot = false;
     }
-
-    just_shot = false; // no enemy found :(
-    return;
-}
-</declaration>
+}</declaration>
 		<location id="id6" x="102" y="-136">
 			<name x="119" y="-170">ready_to_shoot</name>
 			<label kind="invariant" x="136" y="-85">c&lt;=1</label>
@@ -668,7 +687,9 @@ coord_y[id] = 1</label>
 void initialize() {
     coord_x[id] = 0;
     coord_y[id] = 0;
+    enemy_type[id] = type;
     enemy_health[id] = ENEMIES[type].initial_health;
+    birth_time[id] = serial_number * ENEMIES[type].spawn_delay;
     alive[id] = true;
     main_tower_reached_time[id] = 0;
 }</declaration>
@@ -678,7 +699,7 @@ void initialize() {
 		</location>
 		<location id="id115" x="-1156" y="-34">
 			<name x="-1190" y="-68">not_born</name>
-			<label kind="invariant" x="-1368" y="-102">t &lt;= ENEMIES[type].spawn_delay * serial_number</label>
+			<label kind="invariant" x="-1266" y="-85">t &lt;= birth_time[id]</label>
 		</location>
 		<location id="id116" x="-68" y="-238">
 			<name x="-289" y="-272">outside_or_dead_or_game_end</name>
@@ -737,24 +758,11 @@ void initialize() {
 		<transition id="id126">
 			<source ref="id115"/>
 			<target ref="id114"/>
-			<label kind="guard" x="-1105" y="-25">t &gt;= ENEMIES[type].spawn_delay * serial_number  &amp;&amp; !end_game</label>
+			<label kind="guard" x="-1105" y="-25">t &gt;= birth_time[id] &amp;&amp; !end_game</label>
 			<label kind="assignment" x="-892" y="-59">c = 0</label>
 		</transition>
 	</template>
-	<system>EnemyP0 = EnemyP(0, 0, 0);
-EnemyP1 = EnemyP(1, 0, 1);
-EnemyP2 = EnemyP(2, 0, 2);
-EnemyP3 = EnemyP(3, 1, 0);
-EnemyP4 = EnemyP(4, 1, 1);
-EnemyP5 = EnemyP(5, 1, 2);
-
-Enemy0 = Enemy(0, 0);
-Enemy1 = Enemy(1, 0);
-Enemy2 = Enemy(2, 0);
-Enemy3 = Enemy(3, 1);
-Enemy4 = Enemy(4, 1);
-Enemy5 = Enemy(5, 1);
-
+	<system>// Given Example
 Turret0 = Turret(0, 5, 5);
 Turret1 = Turret(1, 8, 2);
 Turret2 = Turret(1, 8, 6);
@@ -763,9 +771,45 @@ Turret4 = Turret(1, 14, 6);
 Turret5 = Turret(2, 2, 3);
 Turret6 = Turret(2, 11, 5);
 
+// Example 2 -- All enemies die
+Turret7 = Turret(1, 5, 5);
+Turret8 = Turret(0, 8, 2);
+Turret9 = Turret(0, 8, 6);
+Turret10 = Turret(0, 14, 2);
+Turret11 = Turret(0, 14, 6);
+Turret12 = Turret(0, 2, 3);
+Turret13 = Turret(2, 11, 5);
+
+// Example 3 -- Main tower dies
+Turret14 = Turret(2, 5, 5);
+Turret15 = Turret(2, 8, 6);
+Turret16 = Turret(1, 14, 6);
+Turret17 = Turret(0, 2, 3);
+Turret18 = Turret(2, 11, 5);
+
+// 3x SQUARE, 3x CIRCLE
+EnemyP0 = EnemyP(0, 0, 0);
+EnemyP1 = EnemyP(1, 0, 1);
+EnemyP2 = EnemyP(2, 0, 2);
+EnemyP3 = EnemyP(3, 1, 0);
+EnemyP4 = EnemyP(4, 1, 1);
+EnemyP5 = EnemyP(5, 1, 2);
+
+// 3x SQUARE, 3x CIRCLE
+Enemy0 = Enemy(0, 0);
+Enemy1 = Enemy(1, 0);
+Enemy2 = Enemy(2, 0);
+Enemy3 = Enemy(3, 1);
+Enemy4 = Enemy(4, 1);
+Enemy5 = Enemy(5, 1);
+
 system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
-        Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
         EnemyP0, EnemyP1, EnemyP2, EnemyP3, EnemyP4, EnemyP5,
+        Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
+        // Example 2
+        // Turret7, Turret8, Turret9, Turret10, Turret11, Turret12, Turret13,
+        // Example 3
+        // Turret14, Turret15, Turret16, Turret17, Turret18,
         GameTime;
 </system>
 	<queries>
@@ -842,7 +886,20 @@ system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
 			<comment/>
 		</query>
 		<query>
-			<formula>A[] main_tower_life_points &gt; 0</formula>
+			<formula>E&lt;&gt; main_tower_life_points &lt; 0</formula>
+			<comment>if the main_tower_life_points is always &gt;= 0 means the one chosen is a winning configuration
+We can also ask </comment>
+		</query>
+		<query>
+			<formula>A[] (end_game imply main_tower_life_points&lt;0)</formula>
+			<comment/>
+		</query>
+		<query>
+			<formula>A[] not deadlock</formula>
+			<comment/>
+		</query>
+		<query>
+			<formula/>
 			<comment/>
 		</query>
 	</queries>

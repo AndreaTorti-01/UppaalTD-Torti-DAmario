@@ -1,0 +1,2294 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// ENEMIES
+const int SQUARE = 0;
+const int CIRCLE = 1;
+const int N_ENEMIES = 700;
+typedef int[0, N_ENEMIES-1] enemy_int;
+
+typedef struct {
+     int speed;
+     int initial_health;
+     int damage;
+     int spawn_delay;
+} enemy_t;
+
+const enemy_t ENEMIES[2] = { { 3, 20, 4, 3}, {1, 10, 4, 2} }; // 0-square, 1-circle
+
+// TURRETS
+const int N_TURRETS = 7;
+typedef int[0, N_TURRETS-1] turret_int;
+
+typedef struct {
+     int shooting_range;
+     int fire_speed;
+     int inflicted_damage;
+} turret_t;
+
+const turret_t TURRETS[3] = { {2, 2, 2}, {1, 7, 5}, {4, 20, 8} }; // 0-basic, 1-cannon, 2-sniper
+
+// COMMON
+int coord_x[N_ENEMIES];
+int coord_y[N_ENEMIES];
+int enemy_health[N_ENEMIES];
+int enemy_type[N_ENEMIES];
+int birth_time[N_ENEMIES];
+bool alive[N_ENEMIES];
+int main_tower_reached_time[N_ENEMIES];
+bool end_game = false;
+
+// OTHER
+int main_tower_life_points = 10;
+
+// CHANNELS
+chan move[N_ENEMIES];
+
+// CLOCKS
+clock t, d;
+int int_c = 0;
+
+// QUERIES CONTROL</declaration>
+	<template>
+		<name>GameTime</name>
+		<declaration>const int timeout = 200;</declaration>
+		<location id="id0" x="-391" y="-51">
+			<name x="-382" y="-85">game_on</name>
+			<label kind="invariant" x="-382" y="-8">d &lt;= 1 &amp;&amp; t &lt;= timeout</label>
+		</location>
+		<location id="id1" x="-51" y="-51">
+			<name x="-34" y="-85">game_end</name>
+			<label kind="invariant" x="-25" y="-42">d &lt;= 1</label>
+		</location>
+		<init ref="id0"/>
+		<transition id="id2">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="guard" x="0" y="0">d &gt;= 1</label>
+			<label kind="assignment" x="-25" y="42">d = 0</label>
+			<nail x="-51" y="68"/>
+			<nail x="68" y="68"/>
+			<nail x="68" y="-51"/>
+		</transition>
+		<transition id="id3">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-501" y="-42">d &gt;= 1 &amp;&amp;
+!end_game &amp;&amp;
+t &lt;= timeout</label>
+			<label kind="assignment" x="-476" y="25">d = 0,
+int_c++</label>
+			<nail x="-510" y="-51"/>
+			<nail x="-510" y="68"/>
+			<nail x="-391" y="68"/>
+		</transition>
+		<transition id="id4">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="-263" y="-161">end_game</label>
+			<nail x="-391" y="-136"/>
+			<nail x="-51" y="-136"/>
+		</transition>
+		<transition id="id5">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="-289" y="-76">t &gt;= timeout &amp;&amp; !end_game</label>
+			<label kind="assignment" x="-280" y="-51">end_game = true,
+d = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>Turret</name>
+		<parameter>const int type_turret, const int coord_x_turret, const int coord_y_turret</parameter>
+		<declaration>clock c;
+
+bool just_shot = false;
+
+int max(int a, int b) {
+    return a &gt; b ? a : b;
+}
+
+void bang(int i) {
+    int j; // iterator for the end game check
+    bool found_alive=false; // utility for the end game check
+    enemy_health[i] = enemy_health[i] - TURRETS[type_turret].inflicted_damage; // shoot the enemy
+    if (enemy_health[i] &lt;= 0) { // if the enemy is killed...
+        alive[i]= false; // unalive the enemy
+        for (j = 0; j &lt; N_ENEMIES &amp;&amp; !found_alive; j++) { // end game check, for every enemy...
+            if(alive[j]){ // if alive the game continues
+                found_alive=true;
+            }
+        }
+        if(!found_alive) { // victory! last enemy has been killed now :)
+            end_game=true;
+        }
+    }
+    just_shot = true;
+}
+
+void scan_for_enemies() {
+    int enemy_to_shoot = -1;          // which enemy to shoot (-1 means none)
+    int closest_distance = TURRETS[type_turret].shooting_range + 1;
+    int earliest_birth_time = -1;
+    int i;                            // iterator
+    int distance;                     // current enemy distance
+
+    for (i = 0; i &lt; N_ENEMIES; i++) {
+        if (alive[i]) {
+            distance = max(abs(coord_x[i] - coord_x_turret), 
+                        abs(coord_y[i] - coord_y_turret));
+
+            if (distance &lt;= TURRETS[type_turret].shooting_range) {
+                if (distance &lt; closest_distance) {
+                    // New closest enemy found
+                    closest_distance = distance;
+                    enemy_to_shoot = i;
+                    earliest_birth_time = birth_time[i];
+                } 
+                else if (distance == closest_distance) {
+                    // Tie-breaking needed
+                    if (birth_time[i] &lt; earliest_birth_time) {
+                        // Prefer enemy that spawned earlier
+                        enemy_to_shoot = i;
+                        earliest_birth_time = birth_time[i];
+                    }
+                    else if (birth_time[i] == earliest_birth_time &amp;&amp; enemy_type[i] == SQUARE) {
+                        // If same spawn time, prefer squares (type 0)
+                        enemy_to_shoot = i;
+                        earliest_birth_time = birth_time[i];
+                    }
+                }
+            }
+        }
+    }
+
+    if (enemy_to_shoot != -1) {
+        bang(enemy_to_shoot);
+        just_shot = true;
+    } else {
+        just_shot = false;
+    }
+}</declaration>
+		<location id="id6" x="102" y="-136">
+			<name x="119" y="-170">ready_to_shoot</name>
+			<label kind="invariant" x="136" y="-85">c&lt;=1</label>
+		</location>
+		<location id="id7" x="-544" y="-136">
+			<name x="-620" y="-127">waiting</name>
+			<label kind="invariant" x="-731" y="-170">c &lt;= TURRETS[type_turret].fire_speed</label>
+		</location>
+		<location id="id8" x="-170" y="68">
+			<name x="-161" y="77">turret_sink</name>
+		</location>
+		<location id="id9" x="-170" y="-136">
+			<urgent/>
+		</location>
+		<location id="id10" x="374" y="-136">
+		</location>
+		<init ref="id10"/>
+		<transition id="id11">
+			<source ref="id10"/>
+			<target ref="id6"/>
+			<label kind="guard" x="178" y="-127">!no_turrets</label>
+		</transition>
+		<transition id="id12">
+			<source ref="id7"/>
+			<target ref="id6"/>
+			<label kind="guard" x="-374" y="145">c&gt;= TURRETS[type_turret].fire_speed &amp;&amp; !end_game</label>
+			<label kind="assignment" x="-238" y="179">c=0</label>
+			<nail x="-544" y="170"/>
+			<nail x="102" y="170"/>
+		</transition>
+		<transition id="id13">
+			<source ref="id9"/>
+			<target ref="id6"/>
+			<label kind="guard" x="-136" y="-263">!just_shot &amp;&amp; !end_game</label>
+			<nail x="-170" y="-238"/>
+			<nail x="102" y="-238"/>
+		</transition>
+		<transition id="id14">
+			<source ref="id9"/>
+			<target ref="id8"/>
+			<label kind="guard" x="-51" y="-17">end_game</label>
+		</transition>
+		<transition id="id15">
+			<source ref="id9"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-391" y="-161">just_shot &amp;&amp; !end_game</label>
+		</transition>
+		<transition id="id16">
+			<source ref="id6"/>
+			<target ref="id9"/>
+			<label kind="guard" x="-68" y="-161">c&gt;=1 &amp;&amp; !end_game</label>
+			<label kind="assignment" x="-110" y="-127">scan_for_enemies(),
+c=0</label>
+		</transition>
+		<transition id="id17">
+			<source ref="id7"/>
+			<target ref="id8"/>
+			<label kind="guard" x="-399" y="-17">end_game</label>
+		</transition>
+		<transition id="id18">
+			<source ref="id6"/>
+			<target ref="id8"/>
+			<label kind="guard" x="-161" y="-42">end_game</label>
+		</transition>
+	</template>
+	<template>
+		<name>Enemy</name>
+		<parameter>const enemy_int id, const int type</parameter>
+		<declaration>void reached_main_tower() {
+    main_tower_reached_time[id] = int_c;
+    coord_x[id] = 15;
+    coord_y[id] = 4;
+    if (alive[id] &amp;&amp; !no_turrets) {
+        main_tower_life_points = main_tower_life_points-ENEMIES[type].damage;
+        if (main_tower_life_points&lt;=0) {
+            end_game=true;
+        }
+    }
+}</declaration>
+		<location id="id19" x="1105" y="-68">
+			<name x="1097" y="-102">out_of_map</name>
+		</location>
+		<location id="id20" x="646" y="-68">
+		</location>
+		<location id="id21" x="578" y="-68">
+		</location>
+		<location id="id22" x="510" y="-68">
+		</location>
+		<location id="id23" x="442" y="-68">
+		</location>
+		<location id="id24" x="374" y="-68">
+		</location>
+		<location id="id25" x="374" y="-136">
+		</location>
+		<location id="id26" x="374" y="-204">
+		</location>
+		<location id="id27" x="714" y="-136">
+		</location>
+		<location id="id28" x="714" y="-204">
+		</location>
+		<location id="id29" x="714" y="-68">
+			<name x="731" y="-93">main_tower</name>
+		</location>
+		<location id="id30" x="714" y="0">
+		</location>
+		<location id="id31" x="714" y="68">
+		</location>
+		<location id="id32" x="714" y="136">
+		</location>
+		<location id="id33" x="646" y="136">
+		</location>
+		<location id="id34" x="578" y="136">
+		</location>
+		<location id="id35" x="510" y="136">
+		</location>
+		<location id="id36" x="442" y="136">
+		</location>
+		<location id="id37" x="374" y="136">
+		</location>
+		<location id="id38" x="306" y="136">
+		</location>
+		<location id="id39" x="238" y="136">
+		</location>
+		<location id="id40" x="714" y="-272">
+		</location>
+		<location id="id41" x="646" y="-272">
+		</location>
+		<location id="id42" x="578" y="-272">
+		</location>
+		<location id="id43" x="510" y="-272">
+		</location>
+		<location id="id44" x="442" y="-272">
+		</location>
+		<location id="id45" x="374" y="-272">
+		</location>
+		<location id="id46" x="306" y="-272">
+		</location>
+		<location id="id47" x="238" y="-272">
+		</location>
+		<location id="id48" x="170" y="136">
+		</location>
+		<location id="id49" x="170" y="68">
+		</location>
+		<location id="id50" x="170" y="0">
+		</location>
+		<location id="id51" x="170" y="-272">
+		</location>
+		<location id="id52" x="170" y="-204">
+		</location>
+		<location id="id53" x="170" y="-136">
+		</location>
+		<location id="id54" x="170" y="-68">
+		</location>
+		<location id="id55" x="102" y="-68">
+		</location>
+		<location id="id56" x="34" y="-68">
+		</location>
+		<location id="id57" x="-34" y="-68">
+		</location>
+		<location id="id58" x="-102" y="-68">
+		</location>
+		<location id="id59" x="-170" y="-68">
+		</location>
+		<location id="id60" x="-238" y="-68">
+		</location>
+		<location id="id61" x="-306" y="-68">
+		</location>
+		<location id="id62" x="-306" y="0">
+		</location>
+		<location id="id63" x="-306" y="68">
+		</location>
+		<location id="id64" x="-306" y="136">
+		</location>
+		<location id="id65" x="-306" y="204">
+			<name x="-289" y="212">spawn_point</name>
+		</location>
+		<init ref="id65"/>
+		<transition id="id66">
+			<source ref="id29"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="918" y="-93">move[id]?</label>
+			<label kind="assignment" x="901" y="-59">alive[id]= false</label>
+		</transition>
+		<transition id="id67">
+			<source ref="id20"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="629" y="-51">move[id]?</label>
+			<label kind="assignment" x="536" y="-102">reached_main_tower()</label>
+		</transition>
+		<transition id="id68">
+			<source ref="id21"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="570" y="-34">move[id]?</label>
+			<label kind="assignment" x="527" y="26">coord_x[id]=14,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id69">
+			<source ref="id22"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="510" y="-51">move[id]?</label>
+			<label kind="assignment" x="442" y="-17">coord_x[id]=13,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id70">
+			<source ref="id23"/>
+			<target ref="id22"/>
+			<label kind="synchronisation" x="434" y="-34">move[id]?</label>
+			<label kind="assignment" x="383" y="26">coord_x[id]=12,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id71">
+			<source ref="id24"/>
+			<target ref="id23"/>
+			<label kind="synchronisation" x="374" y="-51">move[id]?</label>
+			<label kind="assignment" x="315" y="-17">coord_x[id]=11,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id72">
+			<source ref="id25"/>
+			<target ref="id24"/>
+			<label kind="synchronisation" x="383" y="-127">move[id]?</label>
+			<label kind="assignment" x="459" y="-144">coord_x[id]=10,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id73">
+			<source ref="id26"/>
+			<target ref="id25"/>
+			<label kind="synchronisation" x="383" y="-187">move[id]?</label>
+			<label kind="assignment" x="468" y="-195">coord_x[id]=10,
+coord_y[id]=5</label>
+		</transition>
+		<transition id="id74">
+			<source ref="id45"/>
+			<target ref="id26"/>
+			<label kind="synchronisation" x="383" y="-246">move[id]?</label>
+			<label kind="assignment" x="468" y="-255">coord_x[id]=10,
+coord_y[id]=6</label>
+		</transition>
+		<transition id="id75">
+			<source ref="id27"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="723" y="-127">move[id]?</label>
+			<label kind="assignment" x="816" y="-127">reached_main_tower()</label>
+		</transition>
+		<transition id="id76">
+			<source ref="id28"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="723" y="-178">move[id]?</label>
+			<label kind="assignment" x="808" y="-187">coord_x[id]=15,
+coord_y[id]=5</label>
+		</transition>
+		<transition id="id77">
+			<source ref="id40"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="723" y="-246">move[id]?</label>
+			<label kind="assignment" x="808" y="-255">coord_x[id]=15,
+coord_y[id]=6</label>
+		</transition>
+		<transition id="id78">
+			<source ref="id30"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="723" y="-42">move[id]?</label>
+			<label kind="assignment" x="731" y="-25">reached_main_tower()</label>
+		</transition>
+		<transition id="id79">
+			<source ref="id31"/>
+			<target ref="id30"/>
+			<label kind="synchronisation" x="723" y="34">move[id]?</label>
+			<label kind="assignment" x="808" y="26">coord_x[id]=15,
+coord_y[id]=3</label>
+		</transition>
+		<transition id="id80">
+			<source ref="id32"/>
+			<target ref="id31"/>
+			<label kind="synchronisation" x="723" y="94">move[id]?</label>
+			<label kind="assignment" x="808" y="85">coord_x[id]=15,
+coord_y[id]=2</label>
+		</transition>
+		<transition id="id81">
+			<source ref="id33"/>
+			<target ref="id32"/>
+			<label kind="synchronisation" x="646" y="170">move[id]?</label>
+			<label kind="assignment" x="638" y="238">coord_x[id]=15,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id82">
+			<source ref="id34"/>
+			<target ref="id33"/>
+			<label kind="synchronisation" x="578" y="153">move[id]?</label>
+			<label kind="assignment" x="570" y="196">coord_x[id]=14,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id83">
+			<source ref="id35"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="502" y="170">move[id]?</label>
+			<label kind="assignment" x="502" y="238">coord_x[id]=13,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id84">
+			<source ref="id36"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="442" y="153">move[id]?</label>
+			<label kind="assignment" x="434" y="196">coord_x[id]=12,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id85">
+			<source ref="id37"/>
+			<target ref="id36"/>
+			<label kind="synchronisation" x="374" y="170">move[id]?</label>
+			<label kind="assignment" x="366" y="238">coord_x[id]=11,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id86">
+			<source ref="id38"/>
+			<target ref="id37"/>
+			<label kind="synchronisation" x="306" y="153">move[id]?</label>
+			<label kind="assignment" x="289" y="196">coord_x[id]=10,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id87">
+			<source ref="id39"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="238" y="170">move[id]?</label>
+			<label kind="assignment" x="221" y="238">coord_x[id]=9,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id88">
+			<source ref="id48"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="170" y="153">move[id]?</label>
+			<label kind="assignment" x="145" y="196">coord_x[id]=8,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id89">
+			<source ref="id41"/>
+			<target ref="id40"/>
+			<label kind="synchronisation" x="655" y="-306">move[id]?</label>
+			<label kind="assignment" x="638" y="-374">coord_x[id]=15,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id90">
+			<source ref="id42"/>
+			<target ref="id41"/>
+			<label kind="synchronisation" x="578" y="-331">move[id]?</label>
+			<label kind="assignment" x="570" y="-416">coord_x[id]=14,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id91">
+			<source ref="id43"/>
+			<target ref="id42"/>
+			<label kind="synchronisation" x="510" y="-306">move[id]?</label>
+			<label kind="assignment" x="493" y="-365">coord_x[id]=13,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id92">
+			<source ref="id44"/>
+			<target ref="id43"/>
+			<label kind="synchronisation" x="442" y="-331">move[id]?</label>
+			<label kind="assignment" x="434" y="-416">coord_x[id]=12,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id93">
+			<source ref="id45"/>
+			<target ref="id44"/>
+			<label kind="synchronisation" x="383" y="-306">move[id]?</label>
+			<label kind="assignment" x="357" y="-365">coord_x[id]=11,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id94">
+			<source ref="id46"/>
+			<target ref="id45"/>
+			<label kind="synchronisation" x="315" y="-323">move[id]?</label>
+			<label kind="assignment" x="298" y="-416">coord_x[id]=10,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id95">
+			<source ref="id47"/>
+			<target ref="id46"/>
+			<label kind="synchronisation" x="238" y="-306">move[id]?</label>
+			<label kind="assignment" x="221" y="-365">coord_x[id]=9,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id96">
+			<source ref="id51"/>
+			<target ref="id47"/>
+			<label kind="synchronisation" x="170" y="-323">move[id]?</label>
+			<label kind="assignment" x="153" y="-416">coord_x[id]=8,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id97">
+			<source ref="id49"/>
+			<target ref="id48"/>
+			<label kind="synchronisation" x="85" y="85">move[id]?</label>
+			<label kind="assignment" x="179" y="77">coord_x[id]=7,
+coord_y[id]=1</label>
+		</transition>
+		<transition id="id98">
+			<source ref="id50"/>
+			<target ref="id49"/>
+			<label kind="synchronisation" x="85" y="26">move[id]?</label>
+			<label kind="assignment" x="179" y="17">coord_x[id]=7,
+coord_y[id]=2</label>
+		</transition>
+		<transition id="id99">
+			<source ref="id54"/>
+			<target ref="id50"/>
+			<label kind="synchronisation" x="187" y="-59">move[id]?</label>
+			<label kind="assignment" x="187" y="-42">coord_x[id]=7,
+coord_y[id]=3</label>
+		</transition>
+		<transition id="id100">
+			<source ref="id52"/>
+			<target ref="id51"/>
+			<label kind="synchronisation" x="187" y="-238">move[id]?</label>
+			<label kind="assignment" x="230" y="-221">coord_x[id]=7,
+coord_y[id]=7</label>
+		</transition>
+		<transition id="id101">
+			<source ref="id53"/>
+			<target ref="id52"/>
+			<label kind="synchronisation" x="179" y="-178">move[id]?</label>
+			<label kind="assignment" x="230" y="-161">coord_x[id]=7,
+coord_y[id]=6</label>
+		</transition>
+		<transition id="id102">
+			<source ref="id54"/>
+			<target ref="id53"/>
+			<label kind="synchronisation" x="179" y="-102">move[id]?</label>
+			<label kind="assignment" x="255" y="-119">coord_x[id]=7,
+coord_y[id]=5</label>
+		</transition>
+		<transition id="id103">
+			<source ref="id55"/>
+			<target ref="id54"/>
+			<label kind="synchronisation" x="85" y="-102">move[id]?</label>
+			<label kind="assignment" x="43" y="-51">coord_x[id]=7,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id104">
+			<source ref="id56"/>
+			<target ref="id55"/>
+			<label kind="synchronisation" x="34" y="-127">move[id]?</label>
+			<label kind="assignment" x="17" y="-221">coord_x[id]=6,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id105">
+			<source ref="id57"/>
+			<target ref="id56"/>
+			<label kind="synchronisation" x="-34" y="-102">move[id]?</label>
+			<label kind="assignment" x="-42" y="-170">coord_x[id]=5,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id106">
+			<source ref="id58"/>
+			<target ref="id57"/>
+			<label kind="synchronisation" x="-102" y="-127">move[id]?</label>
+			<label kind="assignment" x="-110" y="-221">coord_x[id]=4,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id107">
+			<source ref="id59"/>
+			<target ref="id58"/>
+			<label kind="synchronisation" x="-170" y="-102">move[id]?</label>
+			<label kind="assignment" x="-187" y="-170">coord_x[id]=3,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id108">
+			<source ref="id60"/>
+			<target ref="id59"/>
+			<label kind="synchronisation" x="-246" y="-127">move[id]?</label>
+			<label kind="assignment" x="-263" y="-221">coord_x[id]=2,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id109">
+			<source ref="id61"/>
+			<target ref="id60"/>
+			<label kind="synchronisation" x="-306" y="-110">move[id]?</label>
+			<label kind="assignment" x="-340" y="-161">coord_x[id]=1,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id110">
+			<source ref="id62"/>
+			<target ref="id61"/>
+			<label kind="synchronisation" x="-297" y="-42">move[id]?</label>
+			<label kind="assignment" x="-204" y="-42">coord_x[id]=0,
+coord_y[id]=4</label>
+		</transition>
+		<transition id="id111">
+			<source ref="id63"/>
+			<target ref="id62"/>
+			<label kind="synchronisation" x="-297" y="26">move[id]?</label>
+			<label kind="assignment" x="-204" y="17">coord_x[id]=0,
+coord_y[id]=3</label>
+		</transition>
+		<transition id="id112">
+			<source ref="id64"/>
+			<target ref="id63"/>
+			<label kind="synchronisation" x="-297" y="94">move[id]?</label>
+			<label kind="assignment" x="-204" y="85">coord_x[id]=0,
+coord_y[id]=2</label>
+		</transition>
+		<transition id="id113">
+			<source ref="id65"/>
+			<target ref="id64"/>
+			<label kind="synchronisation" x="-297" y="162">move[id]?</label>
+			<label kind="assignment" x="-212" y="162">coord_x[id] = 0,
+coord_y[id] = 1</label>
+		</transition>
+	</template>
+	<template>
+		<name>EnemyP</name>
+		<parameter>const enemy_int id, const int type, const int serial_number</parameter>
+		<declaration>clock c;
+
+void initialize() {
+    coord_x[id] = 0;
+    coord_y[id] = 0;
+    enemy_type[id] = type;
+    enemy_health[id] = ENEMIES[type].initial_health;
+    birth_time[id] = serial_number * ENEMIES[type].spawn_delay;
+    alive[id] = true;
+    main_tower_reached_time[id] = 0;
+}</declaration>
+		<location id="id114" x="-544" y="-34">
+			<name x="-620" y="-68">idle</name>
+			<label kind="invariant" x="-807" y="-110">c &lt;= ENEMIES[type].speed</label>
+		</location>
+		<location id="id115" x="-1156" y="-34">
+			<name x="-1190" y="-68">not_born</name>
+			<label kind="invariant" x="-1266" y="-85">t &lt;= birth_time[id]</label>
+		</location>
+		<location id="id116" x="-68" y="-238">
+			<name x="-289" y="-272">outside_or_dead_or_game_end</name>
+		</location>
+		<location id="id117" x="-144" y="-34">
+			<urgent/>
+		</location>
+		<location id="id118" x="-1394" y="51">
+			<urgent/>
+		</location>
+		<init ref="id118"/>
+		<transition id="id119">
+			<source ref="id114"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-527" y="-229">!alive[id]</label>
+			<label kind="assignment" x="-535" y="-272">c = 0</label>
+			<nail x="-544" y="-238"/>
+		</transition>
+		<transition id="id120">
+			<source ref="id118"/>
+			<target ref="id115"/>
+			<label kind="assignment" x="-1309" y="25">initialize()</label>
+		</transition>
+		<transition id="id121">
+			<source ref="id117"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-178" y="-161">end_game</label>
+		</transition>
+		<transition id="id122">
+			<source ref="id117"/>
+			<target ref="id114"/>
+			<label kind="guard" x="-331" y="42">!end_game</label>
+			<nail x="-144" y="68"/>
+			<nail x="-544" y="68"/>
+		</transition>
+		<transition id="id123">
+			<source ref="id114"/>
+			<target ref="id117"/>
+			<label kind="guard" x="-501" y="-25">c &gt;= ENEMIES[type].speed &amp;&amp;
+!end_game &amp;&amp; alive[id]</label>
+			<label kind="synchronisation" x="-331" y="-59">move[id]!</label>
+			<label kind="assignment" x="-391" y="-59">c=0</label>
+		</transition>
+		<transition id="id124">
+			<source ref="id114"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-408" y="-153">end_game</label>
+		</transition>
+		<transition id="id125">
+			<source ref="id115"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-1138" y="102">end_game</label>
+			<nail x="-1156" y="136"/>
+			<nail x="-68" y="136"/>
+		</transition>
+		<transition id="id126">
+			<source ref="id115"/>
+			<target ref="id114"/>
+			<label kind="guard" x="-1105" y="-25">t &gt;= birth_time[id] &amp;&amp; !end_game</label>
+			<label kind="assignment" x="-892" y="-59">c = 0</label>
+		</transition>
+	</template>
+	<system>// Given Example
+Turret0 = Turret(0, 5, 5);
+Turret1 = Turret(1, 8, 2);
+Turret2 = Turret(1, 8, 6);
+Turret3 = Turret(1, 14, 2);
+Turret4 = Turret(1, 14, 6);
+Turret5 = Turret(2, 2, 3);
+Turret6 = Turret(2, 11, 5);
+
+// Example 2 -- All enemies die
+Turret7 = Turret(1, 5, 5);
+Turret8 = Turret(0, 8, 2);
+Turret9 = Turret(0, 8, 6);
+Turret10 = Turret(0, 14, 2);
+Turret11 = Turret(0, 14, 6);
+Turret12 = Turret(0, 2, 3);
+Turret13 = Turret(2, 11, 5);
+
+// Example 3 -- Main tower dies
+Turret14 = Turret(2, 5, 5);
+Turret15 = Turret(2, 8, 6);
+Turret16 = Turret(1, 14, 6);
+Turret17 = Turret(0, 2, 3);
+Turret18 = Turret(2, 11, 5);
+
+// 300x SQUARE, 400x CIRCLE
+EnemyP0 = EnemyP(0, 0, 0);
+EnemyP1 = EnemyP(1, 0, 1);
+EnemyP2 = EnemyP(2, 0, 2);
+EnemyP3 = EnemyP(3, 0, 3);
+EnemyP4 = EnemyP(4, 0, 4);
+EnemyP5 = EnemyP(5, 0, 5);
+EnemyP6 = EnemyP(6, 0, 6);
+EnemyP7 = EnemyP(7, 0, 7);
+EnemyP8 = EnemyP(8, 0, 8);
+EnemyP9 = EnemyP(9, 0, 9);
+EnemyP10 = EnemyP(10, 0, 10);
+EnemyP11 = EnemyP(11, 0, 11);
+EnemyP12 = EnemyP(12, 0, 12);
+EnemyP13 = EnemyP(13, 0, 13);
+EnemyP14 = EnemyP(14, 0, 14);
+EnemyP15 = EnemyP(15, 0, 15);
+EnemyP16 = EnemyP(16, 0, 16);
+EnemyP17 = EnemyP(17, 0, 17);
+EnemyP18 = EnemyP(18, 0, 18);
+EnemyP19 = EnemyP(19, 0, 19);
+EnemyP20 = EnemyP(20, 0, 20);
+EnemyP21 = EnemyP(21, 0, 21);
+EnemyP22 = EnemyP(22, 0, 22);
+EnemyP23 = EnemyP(23, 0, 23);
+EnemyP24 = EnemyP(24, 0, 24);
+EnemyP25 = EnemyP(25, 0, 25);
+EnemyP26 = EnemyP(26, 0, 26);
+EnemyP27 = EnemyP(27, 0, 27);
+EnemyP28 = EnemyP(28, 0, 28);
+EnemyP29 = EnemyP(29, 0, 29);
+EnemyP30 = EnemyP(30, 0, 30);
+EnemyP31 = EnemyP(31, 0, 31);
+EnemyP32 = EnemyP(32, 0, 32);
+EnemyP33 = EnemyP(33, 0, 33);
+EnemyP34 = EnemyP(34, 0, 34);
+EnemyP35 = EnemyP(35, 0, 35);
+EnemyP36 = EnemyP(36, 0, 36);
+EnemyP37 = EnemyP(37, 0, 37);
+EnemyP38 = EnemyP(38, 0, 38);
+EnemyP39 = EnemyP(39, 0, 39);
+EnemyP40 = EnemyP(40, 0, 40);
+EnemyP41 = EnemyP(41, 0, 41);
+EnemyP42 = EnemyP(42, 0, 42);
+EnemyP43 = EnemyP(43, 0, 43);
+EnemyP44 = EnemyP(44, 0, 44);
+EnemyP45 = EnemyP(45, 0, 45);
+EnemyP46 = EnemyP(46, 0, 46);
+EnemyP47 = EnemyP(47, 0, 47);
+EnemyP48 = EnemyP(48, 0, 48);
+EnemyP49 = EnemyP(49, 0, 49);
+EnemyP50 = EnemyP(50, 0, 50);
+EnemyP51 = EnemyP(51, 0, 51);
+EnemyP52 = EnemyP(52, 0, 52);
+EnemyP53 = EnemyP(53, 0, 53);
+EnemyP54 = EnemyP(54, 0, 54);
+EnemyP55 = EnemyP(55, 0, 55);
+EnemyP56 = EnemyP(56, 0, 56);
+EnemyP57 = EnemyP(57, 0, 57);
+EnemyP58 = EnemyP(58, 0, 58);
+EnemyP59 = EnemyP(59, 0, 59);
+EnemyP60 = EnemyP(60, 0, 60);
+EnemyP61 = EnemyP(61, 0, 61);
+EnemyP62 = EnemyP(62, 0, 62);
+EnemyP63 = EnemyP(63, 0, 63);
+EnemyP64 = EnemyP(64, 0, 64);
+EnemyP65 = EnemyP(65, 0, 65);
+EnemyP66 = EnemyP(66, 0, 66);
+EnemyP67 = EnemyP(67, 0, 67);
+EnemyP68 = EnemyP(68, 0, 68);
+EnemyP69 = EnemyP(69, 0, 69);
+EnemyP70 = EnemyP(70, 0, 70);
+EnemyP71 = EnemyP(71, 0, 71);
+EnemyP72 = EnemyP(72, 0, 72);
+EnemyP73 = EnemyP(73, 0, 73);
+EnemyP74 = EnemyP(74, 0, 74);
+EnemyP75 = EnemyP(75, 0, 75);
+EnemyP76 = EnemyP(76, 0, 76);
+EnemyP77 = EnemyP(77, 0, 77);
+EnemyP78 = EnemyP(78, 0, 78);
+EnemyP79 = EnemyP(79, 0, 79);
+EnemyP80 = EnemyP(80, 0, 80);
+EnemyP81 = EnemyP(81, 0, 81);
+EnemyP82 = EnemyP(82, 0, 82);
+EnemyP83 = EnemyP(83, 0, 83);
+EnemyP84 = EnemyP(84, 0, 84);
+EnemyP85 = EnemyP(85, 0, 85);
+EnemyP86 = EnemyP(86, 0, 86);
+EnemyP87 = EnemyP(87, 0, 87);
+EnemyP88 = EnemyP(88, 0, 88);
+EnemyP89 = EnemyP(89, 0, 89);
+EnemyP90 = EnemyP(90, 0, 90);
+EnemyP91 = EnemyP(91, 0, 91);
+EnemyP92 = EnemyP(92, 0, 92);
+EnemyP93 = EnemyP(93, 0, 93);
+EnemyP94 = EnemyP(94, 0, 94);
+EnemyP95 = EnemyP(95, 0, 95);
+EnemyP96 = EnemyP(96, 0, 96);
+EnemyP97 = EnemyP(97, 0, 97);
+EnemyP98 = EnemyP(98, 0, 98);
+EnemyP99 = EnemyP(99, 0, 99);
+EnemyP100 = EnemyP(100, 0, 100);
+EnemyP101 = EnemyP(101, 0, 101);
+EnemyP102 = EnemyP(102, 0, 102);
+EnemyP103 = EnemyP(103, 0, 103);
+EnemyP104 = EnemyP(104, 0, 104);
+EnemyP105 = EnemyP(105, 0, 105);
+EnemyP106 = EnemyP(106, 0, 106);
+EnemyP107 = EnemyP(107, 0, 107);
+EnemyP108 = EnemyP(108, 0, 108);
+EnemyP109 = EnemyP(109, 0, 109);
+EnemyP110 = EnemyP(110, 0, 110);
+EnemyP111 = EnemyP(111, 0, 111);
+EnemyP112 = EnemyP(112, 0, 112);
+EnemyP113 = EnemyP(113, 0, 113);
+EnemyP114 = EnemyP(114, 0, 114);
+EnemyP115 = EnemyP(115, 0, 115);
+EnemyP116 = EnemyP(116, 0, 116);
+EnemyP117 = EnemyP(117, 0, 117);
+EnemyP118 = EnemyP(118, 0, 118);
+EnemyP119 = EnemyP(119, 0, 119);
+EnemyP120 = EnemyP(120, 0, 120);
+EnemyP121 = EnemyP(121, 0, 121);
+EnemyP122 = EnemyP(122, 0, 122);
+EnemyP123 = EnemyP(123, 0, 123);
+EnemyP124 = EnemyP(124, 0, 124);
+EnemyP125 = EnemyP(125, 0, 125);
+EnemyP126 = EnemyP(126, 0, 126);
+EnemyP127 = EnemyP(127, 0, 127);
+EnemyP128 = EnemyP(128, 0, 128);
+EnemyP129 = EnemyP(129, 0, 129);
+EnemyP130 = EnemyP(130, 0, 130);
+EnemyP131 = EnemyP(131, 0, 131);
+EnemyP132 = EnemyP(132, 0, 132);
+EnemyP133 = EnemyP(133, 0, 133);
+EnemyP134 = EnemyP(134, 0, 134);
+EnemyP135 = EnemyP(135, 0, 135);
+EnemyP136 = EnemyP(136, 0, 136);
+EnemyP137 = EnemyP(137, 0, 137);
+EnemyP138 = EnemyP(138, 0, 138);
+EnemyP139 = EnemyP(139, 0, 139);
+EnemyP140 = EnemyP(140, 0, 140);
+EnemyP141 = EnemyP(141, 0, 141);
+EnemyP142 = EnemyP(142, 0, 142);
+EnemyP143 = EnemyP(143, 0, 143);
+EnemyP144 = EnemyP(144, 0, 144);
+EnemyP145 = EnemyP(145, 0, 145);
+EnemyP146 = EnemyP(146, 0, 146);
+EnemyP147 = EnemyP(147, 0, 147);
+EnemyP148 = EnemyP(148, 0, 148);
+EnemyP149 = EnemyP(149, 0, 149);
+EnemyP150 = EnemyP(150, 0, 150);
+EnemyP151 = EnemyP(151, 0, 151);
+EnemyP152 = EnemyP(152, 0, 152);
+EnemyP153 = EnemyP(153, 0, 153);
+EnemyP154 = EnemyP(154, 0, 154);
+EnemyP155 = EnemyP(155, 0, 155);
+EnemyP156 = EnemyP(156, 0, 156);
+EnemyP157 = EnemyP(157, 0, 157);
+EnemyP158 = EnemyP(158, 0, 158);
+EnemyP159 = EnemyP(159, 0, 159);
+EnemyP160 = EnemyP(160, 0, 160);
+EnemyP161 = EnemyP(161, 0, 161);
+EnemyP162 = EnemyP(162, 0, 162);
+EnemyP163 = EnemyP(163, 0, 163);
+EnemyP164 = EnemyP(164, 0, 164);
+EnemyP165 = EnemyP(165, 0, 165);
+EnemyP166 = EnemyP(166, 0, 166);
+EnemyP167 = EnemyP(167, 0, 167);
+EnemyP168 = EnemyP(168, 0, 168);
+EnemyP169 = EnemyP(169, 0, 169);
+EnemyP170 = EnemyP(170, 0, 170);
+EnemyP171 = EnemyP(171, 0, 171);
+EnemyP172 = EnemyP(172, 0, 172);
+EnemyP173 = EnemyP(173, 0, 173);
+EnemyP174 = EnemyP(174, 0, 174);
+EnemyP175 = EnemyP(175, 0, 175);
+EnemyP176 = EnemyP(176, 0, 176);
+EnemyP177 = EnemyP(177, 0, 177);
+EnemyP178 = EnemyP(178, 0, 178);
+EnemyP179 = EnemyP(179, 0, 179);
+EnemyP180 = EnemyP(180, 0, 180);
+EnemyP181 = EnemyP(181, 0, 181);
+EnemyP182 = EnemyP(182, 0, 182);
+EnemyP183 = EnemyP(183, 0, 183);
+EnemyP184 = EnemyP(184, 0, 184);
+EnemyP185 = EnemyP(185, 0, 185);
+EnemyP186 = EnemyP(186, 0, 186);
+EnemyP187 = EnemyP(187, 0, 187);
+EnemyP188 = EnemyP(188, 0, 188);
+EnemyP189 = EnemyP(189, 0, 189);
+EnemyP190 = EnemyP(190, 0, 190);
+EnemyP191 = EnemyP(191, 0, 191);
+EnemyP192 = EnemyP(192, 0, 192);
+EnemyP193 = EnemyP(193, 0, 193);
+EnemyP194 = EnemyP(194, 0, 194);
+EnemyP195 = EnemyP(195, 0, 195);
+EnemyP196 = EnemyP(196, 0, 196);
+EnemyP197 = EnemyP(197, 0, 197);
+EnemyP198 = EnemyP(198, 0, 198);
+EnemyP199 = EnemyP(199, 0, 199);
+EnemyP200 = EnemyP(200, 0, 200);
+EnemyP201 = EnemyP(201, 0, 201);
+EnemyP202 = EnemyP(202, 0, 202);
+EnemyP203 = EnemyP(203, 0, 203);
+EnemyP204 = EnemyP(204, 0, 204);
+EnemyP205 = EnemyP(205, 0, 205);
+EnemyP206 = EnemyP(206, 0, 206);
+EnemyP207 = EnemyP(207, 0, 207);
+EnemyP208 = EnemyP(208, 0, 208);
+EnemyP209 = EnemyP(209, 0, 209);
+EnemyP210 = EnemyP(210, 0, 210);
+EnemyP211 = EnemyP(211, 0, 211);
+EnemyP212 = EnemyP(212, 0, 212);
+EnemyP213 = EnemyP(213, 0, 213);
+EnemyP214 = EnemyP(214, 0, 214);
+EnemyP215 = EnemyP(215, 0, 215);
+EnemyP216 = EnemyP(216, 0, 216);
+EnemyP217 = EnemyP(217, 0, 217);
+EnemyP218 = EnemyP(218, 0, 218);
+EnemyP219 = EnemyP(219, 0, 219);
+EnemyP220 = EnemyP(220, 0, 220);
+EnemyP221 = EnemyP(221, 0, 221);
+EnemyP222 = EnemyP(222, 0, 222);
+EnemyP223 = EnemyP(223, 0, 223);
+EnemyP224 = EnemyP(224, 0, 224);
+EnemyP225 = EnemyP(225, 0, 225);
+EnemyP226 = EnemyP(226, 0, 226);
+EnemyP227 = EnemyP(227, 0, 227);
+EnemyP228 = EnemyP(228, 0, 228);
+EnemyP229 = EnemyP(229, 0, 229);
+EnemyP230 = EnemyP(230, 0, 230);
+EnemyP231 = EnemyP(231, 0, 231);
+EnemyP232 = EnemyP(232, 0, 232);
+EnemyP233 = EnemyP(233, 0, 233);
+EnemyP234 = EnemyP(234, 0, 234);
+EnemyP235 = EnemyP(235, 0, 235);
+EnemyP236 = EnemyP(236, 0, 236);
+EnemyP237 = EnemyP(237, 0, 237);
+EnemyP238 = EnemyP(238, 0, 238);
+EnemyP239 = EnemyP(239, 0, 239);
+EnemyP240 = EnemyP(240, 0, 240);
+EnemyP241 = EnemyP(241, 0, 241);
+EnemyP242 = EnemyP(242, 0, 242);
+EnemyP243 = EnemyP(243, 0, 243);
+EnemyP244 = EnemyP(244, 0, 244);
+EnemyP245 = EnemyP(245, 0, 245);
+EnemyP246 = EnemyP(246, 0, 246);
+EnemyP247 = EnemyP(247, 0, 247);
+EnemyP248 = EnemyP(248, 0, 248);
+EnemyP249 = EnemyP(249, 0, 249);
+EnemyP250 = EnemyP(250, 0, 250);
+EnemyP251 = EnemyP(251, 0, 251);
+EnemyP252 = EnemyP(252, 0, 252);
+EnemyP253 = EnemyP(253, 0, 253);
+EnemyP254 = EnemyP(254, 0, 254);
+EnemyP255 = EnemyP(255, 0, 255);
+EnemyP256 = EnemyP(256, 0, 256);
+EnemyP257 = EnemyP(257, 0, 257);
+EnemyP258 = EnemyP(258, 0, 258);
+EnemyP259 = EnemyP(259, 0, 259);
+EnemyP260 = EnemyP(260, 0, 260);
+EnemyP261 = EnemyP(261, 0, 261);
+EnemyP262 = EnemyP(262, 0, 262);
+EnemyP263 = EnemyP(263, 0, 263);
+EnemyP264 = EnemyP(264, 0, 264);
+EnemyP265 = EnemyP(265, 0, 265);
+EnemyP266 = EnemyP(266, 0, 266);
+EnemyP267 = EnemyP(267, 0, 267);
+EnemyP268 = EnemyP(268, 0, 268);
+EnemyP269 = EnemyP(269, 0, 269);
+EnemyP270 = EnemyP(270, 0, 270);
+EnemyP271 = EnemyP(271, 0, 271);
+EnemyP272 = EnemyP(272, 0, 272);
+EnemyP273 = EnemyP(273, 0, 273);
+EnemyP274 = EnemyP(274, 0, 274);
+EnemyP275 = EnemyP(275, 0, 275);
+EnemyP276 = EnemyP(276, 0, 276);
+EnemyP277 = EnemyP(277, 0, 277);
+EnemyP278 = EnemyP(278, 0, 278);
+EnemyP279 = EnemyP(279, 0, 279);
+EnemyP280 = EnemyP(280, 0, 280);
+EnemyP281 = EnemyP(281, 0, 281);
+EnemyP282 = EnemyP(282, 0, 282);
+EnemyP283 = EnemyP(283, 0, 283);
+EnemyP284 = EnemyP(284, 0, 284);
+EnemyP285 = EnemyP(285, 0, 285);
+EnemyP286 = EnemyP(286, 0, 286);
+EnemyP287 = EnemyP(287, 0, 287);
+EnemyP288 = EnemyP(288, 0, 288);
+EnemyP289 = EnemyP(289, 0, 289);
+EnemyP290 = EnemyP(290, 0, 290);
+EnemyP291 = EnemyP(291, 0, 291);
+EnemyP292 = EnemyP(292, 0, 292);
+EnemyP293 = EnemyP(293, 0, 293);
+EnemyP294 = EnemyP(294, 0, 294);
+EnemyP295 = EnemyP(295, 0, 295);
+EnemyP296 = EnemyP(296, 0, 296);
+EnemyP297 = EnemyP(297, 0, 297);
+EnemyP298 = EnemyP(298, 0, 298);
+EnemyP299 = EnemyP(299, 0, 299);
+EnemyP300 = EnemyP(300, 1, 0);
+EnemyP301 = EnemyP(301, 1, 1);
+EnemyP302 = EnemyP(302, 1, 2);
+EnemyP303 = EnemyP(303, 1, 3);
+EnemyP304 = EnemyP(304, 1, 4);
+EnemyP305 = EnemyP(305, 1, 5);
+EnemyP306 = EnemyP(306, 1, 6);
+EnemyP307 = EnemyP(307, 1, 7);
+EnemyP308 = EnemyP(308, 1, 8);
+EnemyP309 = EnemyP(309, 1, 9);
+EnemyP310 = EnemyP(310, 1, 10);
+EnemyP311 = EnemyP(311, 1, 11);
+EnemyP312 = EnemyP(312, 1, 12);
+EnemyP313 = EnemyP(313, 1, 13);
+EnemyP314 = EnemyP(314, 1, 14);
+EnemyP315 = EnemyP(315, 1, 15);
+EnemyP316 = EnemyP(316, 1, 16);
+EnemyP317 = EnemyP(317, 1, 17);
+EnemyP318 = EnemyP(318, 1, 18);
+EnemyP319 = EnemyP(319, 1, 19);
+EnemyP320 = EnemyP(320, 1, 20);
+EnemyP321 = EnemyP(321, 1, 21);
+EnemyP322 = EnemyP(322, 1, 22);
+EnemyP323 = EnemyP(323, 1, 23);
+EnemyP324 = EnemyP(324, 1, 24);
+EnemyP325 = EnemyP(325, 1, 25);
+EnemyP326 = EnemyP(326, 1, 26);
+EnemyP327 = EnemyP(327, 1, 27);
+EnemyP328 = EnemyP(328, 1, 28);
+EnemyP329 = EnemyP(329, 1, 29);
+EnemyP330 = EnemyP(330, 1, 30);
+EnemyP331 = EnemyP(331, 1, 31);
+EnemyP332 = EnemyP(332, 1, 32);
+EnemyP333 = EnemyP(333, 1, 33);
+EnemyP334 = EnemyP(334, 1, 34);
+EnemyP335 = EnemyP(335, 1, 35);
+EnemyP336 = EnemyP(336, 1, 36);
+EnemyP337 = EnemyP(337, 1, 37);
+EnemyP338 = EnemyP(338, 1, 38);
+EnemyP339 = EnemyP(339, 1, 39);
+EnemyP340 = EnemyP(340, 1, 40);
+EnemyP341 = EnemyP(341, 1, 41);
+EnemyP342 = EnemyP(342, 1, 42);
+EnemyP343 = EnemyP(343, 1, 43);
+EnemyP344 = EnemyP(344, 1, 44);
+EnemyP345 = EnemyP(345, 1, 45);
+EnemyP346 = EnemyP(346, 1, 46);
+EnemyP347 = EnemyP(347, 1, 47);
+EnemyP348 = EnemyP(348, 1, 48);
+EnemyP349 = EnemyP(349, 1, 49);
+EnemyP350 = EnemyP(350, 1, 50);
+EnemyP351 = EnemyP(351, 1, 51);
+EnemyP352 = EnemyP(352, 1, 52);
+EnemyP353 = EnemyP(353, 1, 53);
+EnemyP354 = EnemyP(354, 1, 54);
+EnemyP355 = EnemyP(355, 1, 55);
+EnemyP356 = EnemyP(356, 1, 56);
+EnemyP357 = EnemyP(357, 1, 57);
+EnemyP358 = EnemyP(358, 1, 58);
+EnemyP359 = EnemyP(359, 1, 59);
+EnemyP360 = EnemyP(360, 1, 60);
+EnemyP361 = EnemyP(361, 1, 61);
+EnemyP362 = EnemyP(362, 1, 62);
+EnemyP363 = EnemyP(363, 1, 63);
+EnemyP364 = EnemyP(364, 1, 64);
+EnemyP365 = EnemyP(365, 1, 65);
+EnemyP366 = EnemyP(366, 1, 66);
+EnemyP367 = EnemyP(367, 1, 67);
+EnemyP368 = EnemyP(368, 1, 68);
+EnemyP369 = EnemyP(369, 1, 69);
+EnemyP370 = EnemyP(370, 1, 70);
+EnemyP371 = EnemyP(371, 1, 71);
+EnemyP372 = EnemyP(372, 1, 72);
+EnemyP373 = EnemyP(373, 1, 73);
+EnemyP374 = EnemyP(374, 1, 74);
+EnemyP375 = EnemyP(375, 1, 75);
+EnemyP376 = EnemyP(376, 1, 76);
+EnemyP377 = EnemyP(377, 1, 77);
+EnemyP378 = EnemyP(378, 1, 78);
+EnemyP379 = EnemyP(379, 1, 79);
+EnemyP380 = EnemyP(380, 1, 80);
+EnemyP381 = EnemyP(381, 1, 81);
+EnemyP382 = EnemyP(382, 1, 82);
+EnemyP383 = EnemyP(383, 1, 83);
+EnemyP384 = EnemyP(384, 1, 84);
+EnemyP385 = EnemyP(385, 1, 85);
+EnemyP386 = EnemyP(386, 1, 86);
+EnemyP387 = EnemyP(387, 1, 87);
+EnemyP388 = EnemyP(388, 1, 88);
+EnemyP389 = EnemyP(389, 1, 89);
+EnemyP390 = EnemyP(390, 1, 90);
+EnemyP391 = EnemyP(391, 1, 91);
+EnemyP392 = EnemyP(392, 1, 92);
+EnemyP393 = EnemyP(393, 1, 93);
+EnemyP394 = EnemyP(394, 1, 94);
+EnemyP395 = EnemyP(395, 1, 95);
+EnemyP396 = EnemyP(396, 1, 96);
+EnemyP397 = EnemyP(397, 1, 97);
+EnemyP398 = EnemyP(398, 1, 98);
+EnemyP399 = EnemyP(399, 1, 99);
+EnemyP400 = EnemyP(400, 1, 100);
+EnemyP401 = EnemyP(401, 1, 101);
+EnemyP402 = EnemyP(402, 1, 102);
+EnemyP403 = EnemyP(403, 1, 103);
+EnemyP404 = EnemyP(404, 1, 104);
+EnemyP405 = EnemyP(405, 1, 105);
+EnemyP406 = EnemyP(406, 1, 106);
+EnemyP407 = EnemyP(407, 1, 107);
+EnemyP408 = EnemyP(408, 1, 108);
+EnemyP409 = EnemyP(409, 1, 109);
+EnemyP410 = EnemyP(410, 1, 110);
+EnemyP411 = EnemyP(411, 1, 111);
+EnemyP412 = EnemyP(412, 1, 112);
+EnemyP413 = EnemyP(413, 1, 113);
+EnemyP414 = EnemyP(414, 1, 114);
+EnemyP415 = EnemyP(415, 1, 115);
+EnemyP416 = EnemyP(416, 1, 116);
+EnemyP417 = EnemyP(417, 1, 117);
+EnemyP418 = EnemyP(418, 1, 118);
+EnemyP419 = EnemyP(419, 1, 119);
+EnemyP420 = EnemyP(420, 1, 120);
+EnemyP421 = EnemyP(421, 1, 121);
+EnemyP422 = EnemyP(422, 1, 122);
+EnemyP423 = EnemyP(423, 1, 123);
+EnemyP424 = EnemyP(424, 1, 124);
+EnemyP425 = EnemyP(425, 1, 125);
+EnemyP426 = EnemyP(426, 1, 126);
+EnemyP427 = EnemyP(427, 1, 127);
+EnemyP428 = EnemyP(428, 1, 128);
+EnemyP429 = EnemyP(429, 1, 129);
+EnemyP430 = EnemyP(430, 1, 130);
+EnemyP431 = EnemyP(431, 1, 131);
+EnemyP432 = EnemyP(432, 1, 132);
+EnemyP433 = EnemyP(433, 1, 133);
+EnemyP434 = EnemyP(434, 1, 134);
+EnemyP435 = EnemyP(435, 1, 135);
+EnemyP436 = EnemyP(436, 1, 136);
+EnemyP437 = EnemyP(437, 1, 137);
+EnemyP438 = EnemyP(438, 1, 138);
+EnemyP439 = EnemyP(439, 1, 139);
+EnemyP440 = EnemyP(440, 1, 140);
+EnemyP441 = EnemyP(441, 1, 141);
+EnemyP442 = EnemyP(442, 1, 142);
+EnemyP443 = EnemyP(443, 1, 143);
+EnemyP444 = EnemyP(444, 1, 144);
+EnemyP445 = EnemyP(445, 1, 145);
+EnemyP446 = EnemyP(446, 1, 146);
+EnemyP447 = EnemyP(447, 1, 147);
+EnemyP448 = EnemyP(448, 1, 148);
+EnemyP449 = EnemyP(449, 1, 149);
+EnemyP450 = EnemyP(450, 1, 150);
+EnemyP451 = EnemyP(451, 1, 151);
+EnemyP452 = EnemyP(452, 1, 152);
+EnemyP453 = EnemyP(453, 1, 153);
+EnemyP454 = EnemyP(454, 1, 154);
+EnemyP455 = EnemyP(455, 1, 155);
+EnemyP456 = EnemyP(456, 1, 156);
+EnemyP457 = EnemyP(457, 1, 157);
+EnemyP458 = EnemyP(458, 1, 158);
+EnemyP459 = EnemyP(459, 1, 159);
+EnemyP460 = EnemyP(460, 1, 160);
+EnemyP461 = EnemyP(461, 1, 161);
+EnemyP462 = EnemyP(462, 1, 162);
+EnemyP463 = EnemyP(463, 1, 163);
+EnemyP464 = EnemyP(464, 1, 164);
+EnemyP465 = EnemyP(465, 1, 165);
+EnemyP466 = EnemyP(466, 1, 166);
+EnemyP467 = EnemyP(467, 1, 167);
+EnemyP468 = EnemyP(468, 1, 168);
+EnemyP469 = EnemyP(469, 1, 169);
+EnemyP470 = EnemyP(470, 1, 170);
+EnemyP471 = EnemyP(471, 1, 171);
+EnemyP472 = EnemyP(472, 1, 172);
+EnemyP473 = EnemyP(473, 1, 173);
+EnemyP474 = EnemyP(474, 1, 174);
+EnemyP475 = EnemyP(475, 1, 175);
+EnemyP476 = EnemyP(476, 1, 176);
+EnemyP477 = EnemyP(477, 1, 177);
+EnemyP478 = EnemyP(478, 1, 178);
+EnemyP479 = EnemyP(479, 1, 179);
+EnemyP480 = EnemyP(480, 1, 180);
+EnemyP481 = EnemyP(481, 1, 181);
+EnemyP482 = EnemyP(482, 1, 182);
+EnemyP483 = EnemyP(483, 1, 183);
+EnemyP484 = EnemyP(484, 1, 184);
+EnemyP485 = EnemyP(485, 1, 185);
+EnemyP486 = EnemyP(486, 1, 186);
+EnemyP487 = EnemyP(487, 1, 187);
+EnemyP488 = EnemyP(488, 1, 188);
+EnemyP489 = EnemyP(489, 1, 189);
+EnemyP490 = EnemyP(490, 1, 190);
+EnemyP491 = EnemyP(491, 1, 191);
+EnemyP492 = EnemyP(492, 1, 192);
+EnemyP493 = EnemyP(493, 1, 193);
+EnemyP494 = EnemyP(494, 1, 194);
+EnemyP495 = EnemyP(495, 1, 195);
+EnemyP496 = EnemyP(496, 1, 196);
+EnemyP497 = EnemyP(497, 1, 197);
+EnemyP498 = EnemyP(498, 1, 198);
+EnemyP499 = EnemyP(499, 1, 199);
+EnemyP500 = EnemyP(500, 1, 200);
+EnemyP501 = EnemyP(501, 1, 201);
+EnemyP502 = EnemyP(502, 1, 202);
+EnemyP503 = EnemyP(503, 1, 203);
+EnemyP504 = EnemyP(504, 1, 204);
+EnemyP505 = EnemyP(505, 1, 205);
+EnemyP506 = EnemyP(506, 1, 206);
+EnemyP507 = EnemyP(507, 1, 207);
+EnemyP508 = EnemyP(508, 1, 208);
+EnemyP509 = EnemyP(509, 1, 209);
+EnemyP510 = EnemyP(510, 1, 210);
+EnemyP511 = EnemyP(511, 1, 211);
+EnemyP512 = EnemyP(512, 1, 212);
+EnemyP513 = EnemyP(513, 1, 213);
+EnemyP514 = EnemyP(514, 1, 214);
+EnemyP515 = EnemyP(515, 1, 215);
+EnemyP516 = EnemyP(516, 1, 216);
+EnemyP517 = EnemyP(517, 1, 217);
+EnemyP518 = EnemyP(518, 1, 218);
+EnemyP519 = EnemyP(519, 1, 219);
+EnemyP520 = EnemyP(520, 1, 220);
+EnemyP521 = EnemyP(521, 1, 221);
+EnemyP522 = EnemyP(522, 1, 222);
+EnemyP523 = EnemyP(523, 1, 223);
+EnemyP524 = EnemyP(524, 1, 224);
+EnemyP525 = EnemyP(525, 1, 225);
+EnemyP526 = EnemyP(526, 1, 226);
+EnemyP527 = EnemyP(527, 1, 227);
+EnemyP528 = EnemyP(528, 1, 228);
+EnemyP529 = EnemyP(529, 1, 229);
+EnemyP530 = EnemyP(530, 1, 230);
+EnemyP531 = EnemyP(531, 1, 231);
+EnemyP532 = EnemyP(532, 1, 232);
+EnemyP533 = EnemyP(533, 1, 233);
+EnemyP534 = EnemyP(534, 1, 234);
+EnemyP535 = EnemyP(535, 1, 235);
+EnemyP536 = EnemyP(536, 1, 236);
+EnemyP537 = EnemyP(537, 1, 237);
+EnemyP538 = EnemyP(538, 1, 238);
+EnemyP539 = EnemyP(539, 1, 239);
+EnemyP540 = EnemyP(540, 1, 240);
+EnemyP541 = EnemyP(541, 1, 241);
+EnemyP542 = EnemyP(542, 1, 242);
+EnemyP543 = EnemyP(543, 1, 243);
+EnemyP544 = EnemyP(544, 1, 244);
+EnemyP545 = EnemyP(545, 1, 245);
+EnemyP546 = EnemyP(546, 1, 246);
+EnemyP547 = EnemyP(547, 1, 247);
+EnemyP548 = EnemyP(548, 1, 248);
+EnemyP549 = EnemyP(549, 1, 249);
+EnemyP550 = EnemyP(550, 1, 250);
+EnemyP551 = EnemyP(551, 1, 251);
+EnemyP552 = EnemyP(552, 1, 252);
+EnemyP553 = EnemyP(553, 1, 253);
+EnemyP554 = EnemyP(554, 1, 254);
+EnemyP555 = EnemyP(555, 1, 255);
+EnemyP556 = EnemyP(556, 1, 256);
+EnemyP557 = EnemyP(557, 1, 257);
+EnemyP558 = EnemyP(558, 1, 258);
+EnemyP559 = EnemyP(559, 1, 259);
+EnemyP560 = EnemyP(560, 1, 260);
+EnemyP561 = EnemyP(561, 1, 261);
+EnemyP562 = EnemyP(562, 1, 262);
+EnemyP563 = EnemyP(563, 1, 263);
+EnemyP564 = EnemyP(564, 1, 264);
+EnemyP565 = EnemyP(565, 1, 265);
+EnemyP566 = EnemyP(566, 1, 266);
+EnemyP567 = EnemyP(567, 1, 267);
+EnemyP568 = EnemyP(568, 1, 268);
+EnemyP569 = EnemyP(569, 1, 269);
+EnemyP570 = EnemyP(570, 1, 270);
+EnemyP571 = EnemyP(571, 1, 271);
+EnemyP572 = EnemyP(572, 1, 272);
+EnemyP573 = EnemyP(573, 1, 273);
+EnemyP574 = EnemyP(574, 1, 274);
+EnemyP575 = EnemyP(575, 1, 275);
+EnemyP576 = EnemyP(576, 1, 276);
+EnemyP577 = EnemyP(577, 1, 277);
+EnemyP578 = EnemyP(578, 1, 278);
+EnemyP579 = EnemyP(579, 1, 279);
+EnemyP580 = EnemyP(580, 1, 280);
+EnemyP581 = EnemyP(581, 1, 281);
+EnemyP582 = EnemyP(582, 1, 282);
+EnemyP583 = EnemyP(583, 1, 283);
+EnemyP584 = EnemyP(584, 1, 284);
+EnemyP585 = EnemyP(585, 1, 285);
+EnemyP586 = EnemyP(586, 1, 286);
+EnemyP587 = EnemyP(587, 1, 287);
+EnemyP588 = EnemyP(588, 1, 288);
+EnemyP589 = EnemyP(589, 1, 289);
+EnemyP590 = EnemyP(590, 1, 290);
+EnemyP591 = EnemyP(591, 1, 291);
+EnemyP592 = EnemyP(592, 1, 292);
+EnemyP593 = EnemyP(593, 1, 293);
+EnemyP594 = EnemyP(594, 1, 294);
+EnemyP595 = EnemyP(595, 1, 295);
+EnemyP596 = EnemyP(596, 1, 296);
+EnemyP597 = EnemyP(597, 1, 297);
+EnemyP598 = EnemyP(598, 1, 298);
+EnemyP599 = EnemyP(599, 1, 299);
+EnemyP600 = EnemyP(600, 1, 300);
+EnemyP601 = EnemyP(601, 1, 301);
+EnemyP602 = EnemyP(602, 1, 302);
+EnemyP603 = EnemyP(603, 1, 303);
+EnemyP604 = EnemyP(604, 1, 304);
+EnemyP605 = EnemyP(605, 1, 305);
+EnemyP606 = EnemyP(606, 1, 306);
+EnemyP607 = EnemyP(607, 1, 307);
+EnemyP608 = EnemyP(608, 1, 308);
+EnemyP609 = EnemyP(609, 1, 309);
+EnemyP610 = EnemyP(610, 1, 310);
+EnemyP611 = EnemyP(611, 1, 311);
+EnemyP612 = EnemyP(612, 1, 312);
+EnemyP613 = EnemyP(613, 1, 313);
+EnemyP614 = EnemyP(614, 1, 314);
+EnemyP615 = EnemyP(615, 1, 315);
+EnemyP616 = EnemyP(616, 1, 316);
+EnemyP617 = EnemyP(617, 1, 317);
+EnemyP618 = EnemyP(618, 1, 318);
+EnemyP619 = EnemyP(619, 1, 319);
+EnemyP620 = EnemyP(620, 1, 320);
+EnemyP621 = EnemyP(621, 1, 321);
+EnemyP622 = EnemyP(622, 1, 322);
+EnemyP623 = EnemyP(623, 1, 323);
+EnemyP624 = EnemyP(624, 1, 324);
+EnemyP625 = EnemyP(625, 1, 325);
+EnemyP626 = EnemyP(626, 1, 326);
+EnemyP627 = EnemyP(627, 1, 327);
+EnemyP628 = EnemyP(628, 1, 328);
+EnemyP629 = EnemyP(629, 1, 329);
+EnemyP630 = EnemyP(630, 1, 330);
+EnemyP631 = EnemyP(631, 1, 331);
+EnemyP632 = EnemyP(632, 1, 332);
+EnemyP633 = EnemyP(633, 1, 333);
+EnemyP634 = EnemyP(634, 1, 334);
+EnemyP635 = EnemyP(635, 1, 335);
+EnemyP636 = EnemyP(636, 1, 336);
+EnemyP637 = EnemyP(637, 1, 337);
+EnemyP638 = EnemyP(638, 1, 338);
+EnemyP639 = EnemyP(639, 1, 339);
+EnemyP640 = EnemyP(640, 1, 340);
+EnemyP641 = EnemyP(641, 1, 341);
+EnemyP642 = EnemyP(642, 1, 342);
+EnemyP643 = EnemyP(643, 1, 343);
+EnemyP644 = EnemyP(644, 1, 344);
+EnemyP645 = EnemyP(645, 1, 345);
+EnemyP646 = EnemyP(646, 1, 346);
+EnemyP647 = EnemyP(647, 1, 347);
+EnemyP648 = EnemyP(648, 1, 348);
+EnemyP649 = EnemyP(649, 1, 349);
+EnemyP650 = EnemyP(650, 1, 350);
+EnemyP651 = EnemyP(651, 1, 351);
+EnemyP652 = EnemyP(652, 1, 352);
+EnemyP653 = EnemyP(653, 1, 353);
+EnemyP654 = EnemyP(654, 1, 354);
+EnemyP655 = EnemyP(655, 1, 355);
+EnemyP656 = EnemyP(656, 1, 356);
+EnemyP657 = EnemyP(657, 1, 357);
+EnemyP658 = EnemyP(658, 1, 358);
+EnemyP659 = EnemyP(659, 1, 359);
+EnemyP660 = EnemyP(660, 1, 360);
+EnemyP661 = EnemyP(661, 1, 361);
+EnemyP662 = EnemyP(662, 1, 362);
+EnemyP663 = EnemyP(663, 1, 363);
+EnemyP664 = EnemyP(664, 1, 364);
+EnemyP665 = EnemyP(665, 1, 365);
+EnemyP666 = EnemyP(666, 1, 366);
+EnemyP667 = EnemyP(667, 1, 367);
+EnemyP668 = EnemyP(668, 1, 368);
+EnemyP669 = EnemyP(669, 1, 369);
+EnemyP670 = EnemyP(670, 1, 370);
+EnemyP671 = EnemyP(671, 1, 371);
+EnemyP672 = EnemyP(672, 1, 372);
+EnemyP673 = EnemyP(673, 1, 373);
+EnemyP674 = EnemyP(674, 1, 374);
+EnemyP675 = EnemyP(675, 1, 375);
+EnemyP676 = EnemyP(676, 1, 376);
+EnemyP677 = EnemyP(677, 1, 377);
+EnemyP678 = EnemyP(678, 1, 378);
+EnemyP679 = EnemyP(679, 1, 379);
+EnemyP680 = EnemyP(680, 1, 380);
+EnemyP681 = EnemyP(681, 1, 381);
+EnemyP682 = EnemyP(682, 1, 382);
+EnemyP683 = EnemyP(683, 1, 383);
+EnemyP684 = EnemyP(684, 1, 384);
+EnemyP685 = EnemyP(685, 1, 385);
+EnemyP686 = EnemyP(686, 1, 386);
+EnemyP687 = EnemyP(687, 1, 387);
+EnemyP688 = EnemyP(688, 1, 388);
+EnemyP689 = EnemyP(689, 1, 389);
+EnemyP690 = EnemyP(690, 1, 390);
+EnemyP691 = EnemyP(691, 1, 391);
+EnemyP692 = EnemyP(692, 1, 392);
+EnemyP693 = EnemyP(693, 1, 393);
+EnemyP694 = EnemyP(694, 1, 394);
+EnemyP695 = EnemyP(695, 1, 395);
+EnemyP696 = EnemyP(696, 1, 396);
+EnemyP697 = EnemyP(697, 1, 397);
+EnemyP698 = EnemyP(698, 1, 398);
+EnemyP699 = EnemyP(699, 1, 399);
+
+// 300x SQUARE, 400x CIRCLE
+Enemy0 = Enemy(0, 0);
+Enemy1 = Enemy(1, 0);
+Enemy2 = Enemy(2, 0);
+Enemy3 = Enemy(3, 0);
+Enemy4 = Enemy(4, 0);
+Enemy5 = Enemy(5, 0);
+Enemy6 = Enemy(6, 0);
+Enemy7 = Enemy(7, 0);
+Enemy8 = Enemy(8, 0);
+Enemy9 = Enemy(9, 0);
+Enemy10 = Enemy(10, 0);
+Enemy11 = Enemy(11, 0);
+Enemy12 = Enemy(12, 0);
+Enemy13 = Enemy(13, 0);
+Enemy14 = Enemy(14, 0);
+Enemy15 = Enemy(15, 0);
+Enemy16 = Enemy(16, 0);
+Enemy17 = Enemy(17, 0);
+Enemy18 = Enemy(18, 0);
+Enemy19 = Enemy(19, 0);
+Enemy20 = Enemy(20, 0);
+Enemy21 = Enemy(21, 0);
+Enemy22 = Enemy(22, 0);
+Enemy23 = Enemy(23, 0);
+Enemy24 = Enemy(24, 0);
+Enemy25 = Enemy(25, 0);
+Enemy26 = Enemy(26, 0);
+Enemy27 = Enemy(27, 0);
+Enemy28 = Enemy(28, 0);
+Enemy29 = Enemy(29, 0);
+Enemy30 = Enemy(30, 0);
+Enemy31 = Enemy(31, 0);
+Enemy32 = Enemy(32, 0);
+Enemy33 = Enemy(33, 0);
+Enemy34 = Enemy(34, 0);
+Enemy35 = Enemy(35, 0);
+Enemy36 = Enemy(36, 0);
+Enemy37 = Enemy(37, 0);
+Enemy38 = Enemy(38, 0);
+Enemy39 = Enemy(39, 0);
+Enemy40 = Enemy(40, 0);
+Enemy41 = Enemy(41, 0);
+Enemy42 = Enemy(42, 0);
+Enemy43 = Enemy(43, 0);
+Enemy44 = Enemy(44, 0);
+Enemy45 = Enemy(45, 0);
+Enemy46 = Enemy(46, 0);
+Enemy47 = Enemy(47, 0);
+Enemy48 = Enemy(48, 0);
+Enemy49 = Enemy(49, 0);
+Enemy50 = Enemy(50, 0);
+Enemy51 = Enemy(51, 0);
+Enemy52 = Enemy(52, 0);
+Enemy53 = Enemy(53, 0);
+Enemy54 = Enemy(54, 0);
+Enemy55 = Enemy(55, 0);
+Enemy56 = Enemy(56, 0);
+Enemy57 = Enemy(57, 0);
+Enemy58 = Enemy(58, 0);
+Enemy59 = Enemy(59, 0);
+Enemy60 = Enemy(60, 0);
+Enemy61 = Enemy(61, 0);
+Enemy62 = Enemy(62, 0);
+Enemy63 = Enemy(63, 0);
+Enemy64 = Enemy(64, 0);
+Enemy65 = Enemy(65, 0);
+Enemy66 = Enemy(66, 0);
+Enemy67 = Enemy(67, 0);
+Enemy68 = Enemy(68, 0);
+Enemy69 = Enemy(69, 0);
+Enemy70 = Enemy(70, 0);
+Enemy71 = Enemy(71, 0);
+Enemy72 = Enemy(72, 0);
+Enemy73 = Enemy(73, 0);
+Enemy74 = Enemy(74, 0);
+Enemy75 = Enemy(75, 0);
+Enemy76 = Enemy(76, 0);
+Enemy77 = Enemy(77, 0);
+Enemy78 = Enemy(78, 0);
+Enemy79 = Enemy(79, 0);
+Enemy80 = Enemy(80, 0);
+Enemy81 = Enemy(81, 0);
+Enemy82 = Enemy(82, 0);
+Enemy83 = Enemy(83, 0);
+Enemy84 = Enemy(84, 0);
+Enemy85 = Enemy(85, 0);
+Enemy86 = Enemy(86, 0);
+Enemy87 = Enemy(87, 0);
+Enemy88 = Enemy(88, 0);
+Enemy89 = Enemy(89, 0);
+Enemy90 = Enemy(90, 0);
+Enemy91 = Enemy(91, 0);
+Enemy92 = Enemy(92, 0);
+Enemy93 = Enemy(93, 0);
+Enemy94 = Enemy(94, 0);
+Enemy95 = Enemy(95, 0);
+Enemy96 = Enemy(96, 0);
+Enemy97 = Enemy(97, 0);
+Enemy98 = Enemy(98, 0);
+Enemy99 = Enemy(99, 0);
+Enemy100 = Enemy(100, 0);
+Enemy101 = Enemy(101, 0);
+Enemy102 = Enemy(102, 0);
+Enemy103 = Enemy(103, 0);
+Enemy104 = Enemy(104, 0);
+Enemy105 = Enemy(105, 0);
+Enemy106 = Enemy(106, 0);
+Enemy107 = Enemy(107, 0);
+Enemy108 = Enemy(108, 0);
+Enemy109 = Enemy(109, 0);
+Enemy110 = Enemy(110, 0);
+Enemy111 = Enemy(111, 0);
+Enemy112 = Enemy(112, 0);
+Enemy113 = Enemy(113, 0);
+Enemy114 = Enemy(114, 0);
+Enemy115 = Enemy(115, 0);
+Enemy116 = Enemy(116, 0);
+Enemy117 = Enemy(117, 0);
+Enemy118 = Enemy(118, 0);
+Enemy119 = Enemy(119, 0);
+Enemy120 = Enemy(120, 0);
+Enemy121 = Enemy(121, 0);
+Enemy122 = Enemy(122, 0);
+Enemy123 = Enemy(123, 0);
+Enemy124 = Enemy(124, 0);
+Enemy125 = Enemy(125, 0);
+Enemy126 = Enemy(126, 0);
+Enemy127 = Enemy(127, 0);
+Enemy128 = Enemy(128, 0);
+Enemy129 = Enemy(129, 0);
+Enemy130 = Enemy(130, 0);
+Enemy131 = Enemy(131, 0);
+Enemy132 = Enemy(132, 0);
+Enemy133 = Enemy(133, 0);
+Enemy134 = Enemy(134, 0);
+Enemy135 = Enemy(135, 0);
+Enemy136 = Enemy(136, 0);
+Enemy137 = Enemy(137, 0);
+Enemy138 = Enemy(138, 0);
+Enemy139 = Enemy(139, 0);
+Enemy140 = Enemy(140, 0);
+Enemy141 = Enemy(141, 0);
+Enemy142 = Enemy(142, 0);
+Enemy143 = Enemy(143, 0);
+Enemy144 = Enemy(144, 0);
+Enemy145 = Enemy(145, 0);
+Enemy146 = Enemy(146, 0);
+Enemy147 = Enemy(147, 0);
+Enemy148 = Enemy(148, 0);
+Enemy149 = Enemy(149, 0);
+Enemy150 = Enemy(150, 0);
+Enemy151 = Enemy(151, 0);
+Enemy152 = Enemy(152, 0);
+Enemy153 = Enemy(153, 0);
+Enemy154 = Enemy(154, 0);
+Enemy155 = Enemy(155, 0);
+Enemy156 = Enemy(156, 0);
+Enemy157 = Enemy(157, 0);
+Enemy158 = Enemy(158, 0);
+Enemy159 = Enemy(159, 0);
+Enemy160 = Enemy(160, 0);
+Enemy161 = Enemy(161, 0);
+Enemy162 = Enemy(162, 0);
+Enemy163 = Enemy(163, 0);
+Enemy164 = Enemy(164, 0);
+Enemy165 = Enemy(165, 0);
+Enemy166 = Enemy(166, 0);
+Enemy167 = Enemy(167, 0);
+Enemy168 = Enemy(168, 0);
+Enemy169 = Enemy(169, 0);
+Enemy170 = Enemy(170, 0);
+Enemy171 = Enemy(171, 0);
+Enemy172 = Enemy(172, 0);
+Enemy173 = Enemy(173, 0);
+Enemy174 = Enemy(174, 0);
+Enemy175 = Enemy(175, 0);
+Enemy176 = Enemy(176, 0);
+Enemy177 = Enemy(177, 0);
+Enemy178 = Enemy(178, 0);
+Enemy179 = Enemy(179, 0);
+Enemy180 = Enemy(180, 0);
+Enemy181 = Enemy(181, 0);
+Enemy182 = Enemy(182, 0);
+Enemy183 = Enemy(183, 0);
+Enemy184 = Enemy(184, 0);
+Enemy185 = Enemy(185, 0);
+Enemy186 = Enemy(186, 0);
+Enemy187 = Enemy(187, 0);
+Enemy188 = Enemy(188, 0);
+Enemy189 = Enemy(189, 0);
+Enemy190 = Enemy(190, 0);
+Enemy191 = Enemy(191, 0);
+Enemy192 = Enemy(192, 0);
+Enemy193 = Enemy(193, 0);
+Enemy194 = Enemy(194, 0);
+Enemy195 = Enemy(195, 0);
+Enemy196 = Enemy(196, 0);
+Enemy197 = Enemy(197, 0);
+Enemy198 = Enemy(198, 0);
+Enemy199 = Enemy(199, 0);
+Enemy200 = Enemy(200, 0);
+Enemy201 = Enemy(201, 0);
+Enemy202 = Enemy(202, 0);
+Enemy203 = Enemy(203, 0);
+Enemy204 = Enemy(204, 0);
+Enemy205 = Enemy(205, 0);
+Enemy206 = Enemy(206, 0);
+Enemy207 = Enemy(207, 0);
+Enemy208 = Enemy(208, 0);
+Enemy209 = Enemy(209, 0);
+Enemy210 = Enemy(210, 0);
+Enemy211 = Enemy(211, 0);
+Enemy212 = Enemy(212, 0);
+Enemy213 = Enemy(213, 0);
+Enemy214 = Enemy(214, 0);
+Enemy215 = Enemy(215, 0);
+Enemy216 = Enemy(216, 0);
+Enemy217 = Enemy(217, 0);
+Enemy218 = Enemy(218, 0);
+Enemy219 = Enemy(219, 0);
+Enemy220 = Enemy(220, 0);
+Enemy221 = Enemy(221, 0);
+Enemy222 = Enemy(222, 0);
+Enemy223 = Enemy(223, 0);
+Enemy224 = Enemy(224, 0);
+Enemy225 = Enemy(225, 0);
+Enemy226 = Enemy(226, 0);
+Enemy227 = Enemy(227, 0);
+Enemy228 = Enemy(228, 0);
+Enemy229 = Enemy(229, 0);
+Enemy230 = Enemy(230, 0);
+Enemy231 = Enemy(231, 0);
+Enemy232 = Enemy(232, 0);
+Enemy233 = Enemy(233, 0);
+Enemy234 = Enemy(234, 0);
+Enemy235 = Enemy(235, 0);
+Enemy236 = Enemy(236, 0);
+Enemy237 = Enemy(237, 0);
+Enemy238 = Enemy(238, 0);
+Enemy239 = Enemy(239, 0);
+Enemy240 = Enemy(240, 0);
+Enemy241 = Enemy(241, 0);
+Enemy242 = Enemy(242, 0);
+Enemy243 = Enemy(243, 0);
+Enemy244 = Enemy(244, 0);
+Enemy245 = Enemy(245, 0);
+Enemy246 = Enemy(246, 0);
+Enemy247 = Enemy(247, 0);
+Enemy248 = Enemy(248, 0);
+Enemy249 = Enemy(249, 0);
+Enemy250 = Enemy(250, 0);
+Enemy251 = Enemy(251, 0);
+Enemy252 = Enemy(252, 0);
+Enemy253 = Enemy(253, 0);
+Enemy254 = Enemy(254, 0);
+Enemy255 = Enemy(255, 0);
+Enemy256 = Enemy(256, 0);
+Enemy257 = Enemy(257, 0);
+Enemy258 = Enemy(258, 0);
+Enemy259 = Enemy(259, 0);
+Enemy260 = Enemy(260, 0);
+Enemy261 = Enemy(261, 0);
+Enemy262 = Enemy(262, 0);
+Enemy263 = Enemy(263, 0);
+Enemy264 = Enemy(264, 0);
+Enemy265 = Enemy(265, 0);
+Enemy266 = Enemy(266, 0);
+Enemy267 = Enemy(267, 0);
+Enemy268 = Enemy(268, 0);
+Enemy269 = Enemy(269, 0);
+Enemy270 = Enemy(270, 0);
+Enemy271 = Enemy(271, 0);
+Enemy272 = Enemy(272, 0);
+Enemy273 = Enemy(273, 0);
+Enemy274 = Enemy(274, 0);
+Enemy275 = Enemy(275, 0);
+Enemy276 = Enemy(276, 0);
+Enemy277 = Enemy(277, 0);
+Enemy278 = Enemy(278, 0);
+Enemy279 = Enemy(279, 0);
+Enemy280 = Enemy(280, 0);
+Enemy281 = Enemy(281, 0);
+Enemy282 = Enemy(282, 0);
+Enemy283 = Enemy(283, 0);
+Enemy284 = Enemy(284, 0);
+Enemy285 = Enemy(285, 0);
+Enemy286 = Enemy(286, 0);
+Enemy287 = Enemy(287, 0);
+Enemy288 = Enemy(288, 0);
+Enemy289 = Enemy(289, 0);
+Enemy290 = Enemy(290, 0);
+Enemy291 = Enemy(291, 0);
+Enemy292 = Enemy(292, 0);
+Enemy293 = Enemy(293, 0);
+Enemy294 = Enemy(294, 0);
+Enemy295 = Enemy(295, 0);
+Enemy296 = Enemy(296, 0);
+Enemy297 = Enemy(297, 0);
+Enemy298 = Enemy(298, 0);
+Enemy299 = Enemy(299, 0);
+Enemy300 = Enemy(300, 1);
+Enemy301 = Enemy(301, 1);
+Enemy302 = Enemy(302, 1);
+Enemy303 = Enemy(303, 1);
+Enemy304 = Enemy(304, 1);
+Enemy305 = Enemy(305, 1);
+Enemy306 = Enemy(306, 1);
+Enemy307 = Enemy(307, 1);
+Enemy308 = Enemy(308, 1);
+Enemy309 = Enemy(309, 1);
+Enemy310 = Enemy(310, 1);
+Enemy311 = Enemy(311, 1);
+Enemy312 = Enemy(312, 1);
+Enemy313 = Enemy(313, 1);
+Enemy314 = Enemy(314, 1);
+Enemy315 = Enemy(315, 1);
+Enemy316 = Enemy(316, 1);
+Enemy317 = Enemy(317, 1);
+Enemy318 = Enemy(318, 1);
+Enemy319 = Enemy(319, 1);
+Enemy320 = Enemy(320, 1);
+Enemy321 = Enemy(321, 1);
+Enemy322 = Enemy(322, 1);
+Enemy323 = Enemy(323, 1);
+Enemy324 = Enemy(324, 1);
+Enemy325 = Enemy(325, 1);
+Enemy326 = Enemy(326, 1);
+Enemy327 = Enemy(327, 1);
+Enemy328 = Enemy(328, 1);
+Enemy329 = Enemy(329, 1);
+Enemy330 = Enemy(330, 1);
+Enemy331 = Enemy(331, 1);
+Enemy332 = Enemy(332, 1);
+Enemy333 = Enemy(333, 1);
+Enemy334 = Enemy(334, 1);
+Enemy335 = Enemy(335, 1);
+Enemy336 = Enemy(336, 1);
+Enemy337 = Enemy(337, 1);
+Enemy338 = Enemy(338, 1);
+Enemy339 = Enemy(339, 1);
+Enemy340 = Enemy(340, 1);
+Enemy341 = Enemy(341, 1);
+Enemy342 = Enemy(342, 1);
+Enemy343 = Enemy(343, 1);
+Enemy344 = Enemy(344, 1);
+Enemy345 = Enemy(345, 1);
+Enemy346 = Enemy(346, 1);
+Enemy347 = Enemy(347, 1);
+Enemy348 = Enemy(348, 1);
+Enemy349 = Enemy(349, 1);
+Enemy350 = Enemy(350, 1);
+Enemy351 = Enemy(351, 1);
+Enemy352 = Enemy(352, 1);
+Enemy353 = Enemy(353, 1);
+Enemy354 = Enemy(354, 1);
+Enemy355 = Enemy(355, 1);
+Enemy356 = Enemy(356, 1);
+Enemy357 = Enemy(357, 1);
+Enemy358 = Enemy(358, 1);
+Enemy359 = Enemy(359, 1);
+Enemy360 = Enemy(360, 1);
+Enemy361 = Enemy(361, 1);
+Enemy362 = Enemy(362, 1);
+Enemy363 = Enemy(363, 1);
+Enemy364 = Enemy(364, 1);
+Enemy365 = Enemy(365, 1);
+Enemy366 = Enemy(366, 1);
+Enemy367 = Enemy(367, 1);
+Enemy368 = Enemy(368, 1);
+Enemy369 = Enemy(369, 1);
+Enemy370 = Enemy(370, 1);
+Enemy371 = Enemy(371, 1);
+Enemy372 = Enemy(372, 1);
+Enemy373 = Enemy(373, 1);
+Enemy374 = Enemy(374, 1);
+Enemy375 = Enemy(375, 1);
+Enemy376 = Enemy(376, 1);
+Enemy377 = Enemy(377, 1);
+Enemy378 = Enemy(378, 1);
+Enemy379 = Enemy(379, 1);
+Enemy380 = Enemy(380, 1);
+Enemy381 = Enemy(381, 1);
+Enemy382 = Enemy(382, 1);
+Enemy383 = Enemy(383, 1);
+Enemy384 = Enemy(384, 1);
+Enemy385 = Enemy(385, 1);
+Enemy386 = Enemy(386, 1);
+Enemy387 = Enemy(387, 1);
+Enemy388 = Enemy(388, 1);
+Enemy389 = Enemy(389, 1);
+Enemy390 = Enemy(390, 1);
+Enemy391 = Enemy(391, 1);
+Enemy392 = Enemy(392, 1);
+Enemy393 = Enemy(393, 1);
+Enemy394 = Enemy(394, 1);
+Enemy395 = Enemy(395, 1);
+Enemy396 = Enemy(396, 1);
+Enemy397 = Enemy(397, 1);
+Enemy398 = Enemy(398, 1);
+Enemy399 = Enemy(399, 1);
+Enemy400 = Enemy(400, 1);
+Enemy401 = Enemy(401, 1);
+Enemy402 = Enemy(402, 1);
+Enemy403 = Enemy(403, 1);
+Enemy404 = Enemy(404, 1);
+Enemy405 = Enemy(405, 1);
+Enemy406 = Enemy(406, 1);
+Enemy407 = Enemy(407, 1);
+Enemy408 = Enemy(408, 1);
+Enemy409 = Enemy(409, 1);
+Enemy410 = Enemy(410, 1);
+Enemy411 = Enemy(411, 1);
+Enemy412 = Enemy(412, 1);
+Enemy413 = Enemy(413, 1);
+Enemy414 = Enemy(414, 1);
+Enemy415 = Enemy(415, 1);
+Enemy416 = Enemy(416, 1);
+Enemy417 = Enemy(417, 1);
+Enemy418 = Enemy(418, 1);
+Enemy419 = Enemy(419, 1);
+Enemy420 = Enemy(420, 1);
+Enemy421 = Enemy(421, 1);
+Enemy422 = Enemy(422, 1);
+Enemy423 = Enemy(423, 1);
+Enemy424 = Enemy(424, 1);
+Enemy425 = Enemy(425, 1);
+Enemy426 = Enemy(426, 1);
+Enemy427 = Enemy(427, 1);
+Enemy428 = Enemy(428, 1);
+Enemy429 = Enemy(429, 1);
+Enemy430 = Enemy(430, 1);
+Enemy431 = Enemy(431, 1);
+Enemy432 = Enemy(432, 1);
+Enemy433 = Enemy(433, 1);
+Enemy434 = Enemy(434, 1);
+Enemy435 = Enemy(435, 1);
+Enemy436 = Enemy(436, 1);
+Enemy437 = Enemy(437, 1);
+Enemy438 = Enemy(438, 1);
+Enemy439 = Enemy(439, 1);
+Enemy440 = Enemy(440, 1);
+Enemy441 = Enemy(441, 1);
+Enemy442 = Enemy(442, 1);
+Enemy443 = Enemy(443, 1);
+Enemy444 = Enemy(444, 1);
+Enemy445 = Enemy(445, 1);
+Enemy446 = Enemy(446, 1);
+Enemy447 = Enemy(447, 1);
+Enemy448 = Enemy(448, 1);
+Enemy449 = Enemy(449, 1);
+Enemy450 = Enemy(450, 1);
+Enemy451 = Enemy(451, 1);
+Enemy452 = Enemy(452, 1);
+Enemy453 = Enemy(453, 1);
+Enemy454 = Enemy(454, 1);
+Enemy455 = Enemy(455, 1);
+Enemy456 = Enemy(456, 1);
+Enemy457 = Enemy(457, 1);
+Enemy458 = Enemy(458, 1);
+Enemy459 = Enemy(459, 1);
+Enemy460 = Enemy(460, 1);
+Enemy461 = Enemy(461, 1);
+Enemy462 = Enemy(462, 1);
+Enemy463 = Enemy(463, 1);
+Enemy464 = Enemy(464, 1);
+Enemy465 = Enemy(465, 1);
+Enemy466 = Enemy(466, 1);
+Enemy467 = Enemy(467, 1);
+Enemy468 = Enemy(468, 1);
+Enemy469 = Enemy(469, 1);
+Enemy470 = Enemy(470, 1);
+Enemy471 = Enemy(471, 1);
+Enemy472 = Enemy(472, 1);
+Enemy473 = Enemy(473, 1);
+Enemy474 = Enemy(474, 1);
+Enemy475 = Enemy(475, 1);
+Enemy476 = Enemy(476, 1);
+Enemy477 = Enemy(477, 1);
+Enemy478 = Enemy(478, 1);
+Enemy479 = Enemy(479, 1);
+Enemy480 = Enemy(480, 1);
+Enemy481 = Enemy(481, 1);
+Enemy482 = Enemy(482, 1);
+Enemy483 = Enemy(483, 1);
+Enemy484 = Enemy(484, 1);
+Enemy485 = Enemy(485, 1);
+Enemy486 = Enemy(486, 1);
+Enemy487 = Enemy(487, 1);
+Enemy488 = Enemy(488, 1);
+Enemy489 = Enemy(489, 1);
+Enemy490 = Enemy(490, 1);
+Enemy491 = Enemy(491, 1);
+Enemy492 = Enemy(492, 1);
+Enemy493 = Enemy(493, 1);
+Enemy494 = Enemy(494, 1);
+Enemy495 = Enemy(495, 1);
+Enemy496 = Enemy(496, 1);
+Enemy497 = Enemy(497, 1);
+Enemy498 = Enemy(498, 1);
+Enemy499 = Enemy(499, 1);
+Enemy500 = Enemy(500, 1);
+Enemy501 = Enemy(501, 1);
+Enemy502 = Enemy(502, 1);
+Enemy503 = Enemy(503, 1);
+Enemy504 = Enemy(504, 1);
+Enemy505 = Enemy(505, 1);
+Enemy506 = Enemy(506, 1);
+Enemy507 = Enemy(507, 1);
+Enemy508 = Enemy(508, 1);
+Enemy509 = Enemy(509, 1);
+Enemy510 = Enemy(510, 1);
+Enemy511 = Enemy(511, 1);
+Enemy512 = Enemy(512, 1);
+Enemy513 = Enemy(513, 1);
+Enemy514 = Enemy(514, 1);
+Enemy515 = Enemy(515, 1);
+Enemy516 = Enemy(516, 1);
+Enemy517 = Enemy(517, 1);
+Enemy518 = Enemy(518, 1);
+Enemy519 = Enemy(519, 1);
+Enemy520 = Enemy(520, 1);
+Enemy521 = Enemy(521, 1);
+Enemy522 = Enemy(522, 1);
+Enemy523 = Enemy(523, 1);
+Enemy524 = Enemy(524, 1);
+Enemy525 = Enemy(525, 1);
+Enemy526 = Enemy(526, 1);
+Enemy527 = Enemy(527, 1);
+Enemy528 = Enemy(528, 1);
+Enemy529 = Enemy(529, 1);
+Enemy530 = Enemy(530, 1);
+Enemy531 = Enemy(531, 1);
+Enemy532 = Enemy(532, 1);
+Enemy533 = Enemy(533, 1);
+Enemy534 = Enemy(534, 1);
+Enemy535 = Enemy(535, 1);
+Enemy536 = Enemy(536, 1);
+Enemy537 = Enemy(537, 1);
+Enemy538 = Enemy(538, 1);
+Enemy539 = Enemy(539, 1);
+Enemy540 = Enemy(540, 1);
+Enemy541 = Enemy(541, 1);
+Enemy542 = Enemy(542, 1);
+Enemy543 = Enemy(543, 1);
+Enemy544 = Enemy(544, 1);
+Enemy545 = Enemy(545, 1);
+Enemy546 = Enemy(546, 1);
+Enemy547 = Enemy(547, 1);
+Enemy548 = Enemy(548, 1);
+Enemy549 = Enemy(549, 1);
+Enemy550 = Enemy(550, 1);
+Enemy551 = Enemy(551, 1);
+Enemy552 = Enemy(552, 1);
+Enemy553 = Enemy(553, 1);
+Enemy554 = Enemy(554, 1);
+Enemy555 = Enemy(555, 1);
+Enemy556 = Enemy(556, 1);
+Enemy557 = Enemy(557, 1);
+Enemy558 = Enemy(558, 1);
+Enemy559 = Enemy(559, 1);
+Enemy560 = Enemy(560, 1);
+Enemy561 = Enemy(561, 1);
+Enemy562 = Enemy(562, 1);
+Enemy563 = Enemy(563, 1);
+Enemy564 = Enemy(564, 1);
+Enemy565 = Enemy(565, 1);
+Enemy566 = Enemy(566, 1);
+Enemy567 = Enemy(567, 1);
+Enemy568 = Enemy(568, 1);
+Enemy569 = Enemy(569, 1);
+Enemy570 = Enemy(570, 1);
+Enemy571 = Enemy(571, 1);
+Enemy572 = Enemy(572, 1);
+Enemy573 = Enemy(573, 1);
+Enemy574 = Enemy(574, 1);
+Enemy575 = Enemy(575, 1);
+Enemy576 = Enemy(576, 1);
+Enemy577 = Enemy(577, 1);
+Enemy578 = Enemy(578, 1);
+Enemy579 = Enemy(579, 1);
+Enemy580 = Enemy(580, 1);
+Enemy581 = Enemy(581, 1);
+Enemy582 = Enemy(582, 1);
+Enemy583 = Enemy(583, 1);
+Enemy584 = Enemy(584, 1);
+Enemy585 = Enemy(585, 1);
+Enemy586 = Enemy(586, 1);
+Enemy587 = Enemy(587, 1);
+Enemy588 = Enemy(588, 1);
+Enemy589 = Enemy(589, 1);
+Enemy590 = Enemy(590, 1);
+Enemy591 = Enemy(591, 1);
+Enemy592 = Enemy(592, 1);
+Enemy593 = Enemy(593, 1);
+Enemy594 = Enemy(594, 1);
+Enemy595 = Enemy(595, 1);
+Enemy596 = Enemy(596, 1);
+Enemy597 = Enemy(597, 1);
+Enemy598 = Enemy(598, 1);
+Enemy599 = Enemy(599, 1);
+Enemy600 = Enemy(600, 1);
+Enemy601 = Enemy(601, 1);
+Enemy602 = Enemy(602, 1);
+Enemy603 = Enemy(603, 1);
+Enemy604 = Enemy(604, 1);
+Enemy605 = Enemy(605, 1);
+Enemy606 = Enemy(606, 1);
+Enemy607 = Enemy(607, 1);
+Enemy608 = Enemy(608, 1);
+Enemy609 = Enemy(609, 1);
+Enemy610 = Enemy(610, 1);
+Enemy611 = Enemy(611, 1);
+Enemy612 = Enemy(612, 1);
+Enemy613 = Enemy(613, 1);
+Enemy614 = Enemy(614, 1);
+Enemy615 = Enemy(615, 1);
+Enemy616 = Enemy(616, 1);
+Enemy617 = Enemy(617, 1);
+Enemy618 = Enemy(618, 1);
+Enemy619 = Enemy(619, 1);
+Enemy620 = Enemy(620, 1);
+Enemy621 = Enemy(621, 1);
+Enemy622 = Enemy(622, 1);
+Enemy623 = Enemy(623, 1);
+Enemy624 = Enemy(624, 1);
+Enemy625 = Enemy(625, 1);
+Enemy626 = Enemy(626, 1);
+Enemy627 = Enemy(627, 1);
+Enemy628 = Enemy(628, 1);
+Enemy629 = Enemy(629, 1);
+Enemy630 = Enemy(630, 1);
+Enemy631 = Enemy(631, 1);
+Enemy632 = Enemy(632, 1);
+Enemy633 = Enemy(633, 1);
+Enemy634 = Enemy(634, 1);
+Enemy635 = Enemy(635, 1);
+Enemy636 = Enemy(636, 1);
+Enemy637 = Enemy(637, 1);
+Enemy638 = Enemy(638, 1);
+Enemy639 = Enemy(639, 1);
+Enemy640 = Enemy(640, 1);
+Enemy641 = Enemy(641, 1);
+Enemy642 = Enemy(642, 1);
+Enemy643 = Enemy(643, 1);
+Enemy644 = Enemy(644, 1);
+Enemy645 = Enemy(645, 1);
+Enemy646 = Enemy(646, 1);
+Enemy647 = Enemy(647, 1);
+Enemy648 = Enemy(648, 1);
+Enemy649 = Enemy(649, 1);
+Enemy650 = Enemy(650, 1);
+Enemy651 = Enemy(651, 1);
+Enemy652 = Enemy(652, 1);
+Enemy653 = Enemy(653, 1);
+Enemy654 = Enemy(654, 1);
+Enemy655 = Enemy(655, 1);
+Enemy656 = Enemy(656, 1);
+Enemy657 = Enemy(657, 1);
+Enemy658 = Enemy(658, 1);
+Enemy659 = Enemy(659, 1);
+Enemy660 = Enemy(660, 1);
+Enemy661 = Enemy(661, 1);
+Enemy662 = Enemy(662, 1);
+Enemy663 = Enemy(663, 1);
+Enemy664 = Enemy(664, 1);
+Enemy665 = Enemy(665, 1);
+Enemy666 = Enemy(666, 1);
+Enemy667 = Enemy(667, 1);
+Enemy668 = Enemy(668, 1);
+Enemy669 = Enemy(669, 1);
+Enemy670 = Enemy(670, 1);
+Enemy671 = Enemy(671, 1);
+Enemy672 = Enemy(672, 1);
+Enemy673 = Enemy(673, 1);
+Enemy674 = Enemy(674, 1);
+Enemy675 = Enemy(675, 1);
+Enemy676 = Enemy(676, 1);
+Enemy677 = Enemy(677, 1);
+Enemy678 = Enemy(678, 1);
+Enemy679 = Enemy(679, 1);
+Enemy680 = Enemy(680, 1);
+Enemy681 = Enemy(681, 1);
+Enemy682 = Enemy(682, 1);
+Enemy683 = Enemy(683, 1);
+Enemy684 = Enemy(684, 1);
+Enemy685 = Enemy(685, 1);
+Enemy686 = Enemy(686, 1);
+Enemy687 = Enemy(687, 1);
+Enemy688 = Enemy(688, 1);
+Enemy689 = Enemy(689, 1);
+Enemy690 = Enemy(690, 1);
+Enemy691 = Enemy(691, 1);
+Enemy692 = Enemy(692, 1);
+Enemy693 = Enemy(693, 1);
+Enemy694 = Enemy(694, 1);
+Enemy695 = Enemy(695, 1);
+Enemy696 = Enemy(696, 1);
+Enemy697 = Enemy(697, 1);
+Enemy698 = Enemy(698, 1);
+Enemy699 = Enemy(699, 1);
+
+system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5, Enemy6, Enemy7, Enemy8, Enemy9, Enemy10, Enemy11, Enemy12, Enemy13, Enemy14, Enemy15, Enemy16, Enemy17, Enemy18, Enemy19, Enemy20, Enemy21, Enemy22, Enemy23, Enemy24, Enemy25, Enemy26, Enemy27, Enemy28, Enemy29, Enemy30, Enemy31, Enemy32, Enemy33, Enemy34, Enemy35, Enemy36, Enemy37, Enemy38, Enemy39, Enemy40, Enemy41, Enemy42, Enemy43, Enemy44, Enemy45, Enemy46, Enemy47, Enemy48, Enemy49, Enemy50, Enemy51, Enemy52, Enemy53, Enemy54, Enemy55, Enemy56, Enemy57, Enemy58, Enemy59, Enemy60, Enemy61, Enemy62, Enemy63, Enemy64, Enemy65, Enemy66, Enemy67, Enemy68, Enemy69, Enemy70, Enemy71, Enemy72, Enemy73, Enemy74, Enemy75, Enemy76, Enemy77, Enemy78, Enemy79, Enemy80, Enemy81, Enemy82, Enemy83, Enemy84, Enemy85, Enemy86, Enemy87, Enemy88, Enemy89, Enemy90, Enemy91, Enemy92, Enemy93, Enemy94, Enemy95, Enemy96, Enemy97, Enemy98, Enemy99, Enemy100, Enemy101, Enemy102, Enemy103, Enemy104, Enemy105, Enemy106, Enemy107, Enemy108, Enemy109, Enemy110, Enemy111, Enemy112, Enemy113, Enemy114, Enemy115, Enemy116, Enemy117, Enemy118, Enemy119, Enemy120, Enemy121, Enemy122, Enemy123, Enemy124, Enemy125, Enemy126, Enemy127, Enemy128, Enemy129, Enemy130, Enemy131, Enemy132, Enemy133, Enemy134, Enemy135, Enemy136, Enemy137, Enemy138, Enemy139, Enemy140, Enemy141, Enemy142, Enemy143, Enemy144, Enemy145, Enemy146, Enemy147, Enemy148, Enemy149, Enemy150, Enemy151, Enemy152, Enemy153, Enemy154, Enemy155, Enemy156, Enemy157, Enemy158, Enemy159, Enemy160, Enemy161, Enemy162, Enemy163, Enemy164, Enemy165, Enemy166, Enemy167, Enemy168, Enemy169, Enemy170, Enemy171, Enemy172, Enemy173, Enemy174, Enemy175, Enemy176, Enemy177, Enemy178, Enemy179, Enemy180, Enemy181, Enemy182, Enemy183, Enemy184, Enemy185, Enemy186, Enemy187, Enemy188, Enemy189, Enemy190, Enemy191, Enemy192, Enemy193, Enemy194, Enemy195, Enemy196, Enemy197, Enemy198, Enemy199, Enemy200, Enemy201, Enemy202, Enemy203, Enemy204, Enemy205, Enemy206, Enemy207, Enemy208, Enemy209, Enemy210, Enemy211, Enemy212, Enemy213, Enemy214, Enemy215, Enemy216, Enemy217, Enemy218, Enemy219, Enemy220, Enemy221, Enemy222, Enemy223, Enemy224, Enemy225, Enemy226, Enemy227, Enemy228, Enemy229, Enemy230, Enemy231, Enemy232, Enemy233, Enemy234, Enemy235, Enemy236, Enemy237, Enemy238, Enemy239, Enemy240, Enemy241, Enemy242, Enemy243, Enemy244, Enemy245, Enemy246, Enemy247, Enemy248, Enemy249, Enemy250, Enemy251, Enemy252, Enemy253, Enemy254, Enemy255, Enemy256, Enemy257, Enemy258, Enemy259, Enemy260, Enemy261, Enemy262, Enemy263, Enemy264, Enemy265, Enemy266, Enemy267, Enemy268, Enemy269, Enemy270, Enemy271, Enemy272, Enemy273, Enemy274, Enemy275, Enemy276, Enemy277, Enemy278, Enemy279, Enemy280, Enemy281, Enemy282, Enemy283, Enemy284, Enemy285, Enemy286, Enemy287, Enemy288, Enemy289, Enemy290, Enemy291, Enemy292, Enemy293, Enemy294, Enemy295, Enemy296, Enemy297, Enemy298, Enemy299, Enemy300, Enemy301, Enemy302, Enemy303, Enemy304, Enemy305, Enemy306, Enemy307, Enemy308, Enemy309, Enemy310, Enemy311, Enemy312, Enemy313, Enemy314, Enemy315, Enemy316, Enemy317, Enemy318, Enemy319, Enemy320, Enemy321, Enemy322, Enemy323, Enemy324, Enemy325, Enemy326, Enemy327, Enemy328, Enemy329, Enemy330, Enemy331, Enemy332, Enemy333, Enemy334, Enemy335, Enemy336, Enemy337, Enemy338, Enemy339, Enemy340, Enemy341, Enemy342, Enemy343, Enemy344, Enemy345, Enemy346, Enemy347, Enemy348, Enemy349, Enemy350, Enemy351, Enemy352, Enemy353, Enemy354, Enemy355, Enemy356, Enemy357, Enemy358, Enemy359, Enemy360, Enemy361, Enemy362, Enemy363, Enemy364, Enemy365, Enemy366, Enemy367, Enemy368, Enemy369, Enemy370, Enemy371, Enemy372, Enemy373, Enemy374, Enemy375, Enemy376, Enemy377, Enemy378, Enemy379, Enemy380, Enemy381, Enemy382, Enemy383, Enemy384, Enemy385, Enemy386, Enemy387, Enemy388, Enemy389, Enemy390, Enemy391, Enemy392, Enemy393, Enemy394, Enemy395, Enemy396, Enemy397, Enemy398, Enemy399, Enemy400, Enemy401, Enemy402, Enemy403, Enemy404, Enemy405, Enemy406, Enemy407, Enemy408, Enemy409, Enemy410, Enemy411, Enemy412, Enemy413, Enemy414, Enemy415, Enemy416, Enemy417, Enemy418, Enemy419, Enemy420, Enemy421, Enemy422, Enemy423, Enemy424, Enemy425, Enemy426, Enemy427, Enemy428, Enemy429, Enemy430, Enemy431, Enemy432, Enemy433, Enemy434, Enemy435, Enemy436, Enemy437, Enemy438, Enemy439, Enemy440, Enemy441, Enemy442, Enemy443, Enemy444, Enemy445, Enemy446, Enemy447, Enemy448, Enemy449, Enemy450, Enemy451, Enemy452, Enemy453, Enemy454, Enemy455, Enemy456, Enemy457, Enemy458, Enemy459, Enemy460, Enemy461, Enemy462, Enemy463, Enemy464, Enemy465, Enemy466, Enemy467, Enemy468, Enemy469, Enemy470, Enemy471, Enemy472, Enemy473, Enemy474, Enemy475, Enemy476, Enemy477, Enemy478, Enemy479, Enemy480, Enemy481, Enemy482, Enemy483, Enemy484, Enemy485, Enemy486, Enemy487, Enemy488, Enemy489, Enemy490, Enemy491, Enemy492, Enemy493, Enemy494, Enemy495, Enemy496, Enemy497, Enemy498, Enemy499, Enemy500, Enemy501, Enemy502, Enemy503, Enemy504, Enemy505, Enemy506, Enemy507, Enemy508, Enemy509, Enemy510, Enemy511, Enemy512, Enemy513, Enemy514, Enemy515, Enemy516, Enemy517, Enemy518, Enemy519, Enemy520, Enemy521, Enemy522, Enemy523, Enemy524, Enemy525, Enemy526, Enemy527, Enemy528, Enemy529, Enemy530, Enemy531, Enemy532, Enemy533, Enemy534, Enemy535, Enemy536, Enemy537, Enemy538, Enemy539, Enemy540, Enemy541, Enemy542, Enemy543, Enemy544, Enemy545, Enemy546, Enemy547, Enemy548, Enemy549, Enemy550, Enemy551, Enemy552, Enemy553, Enemy554, Enemy555, Enemy556, Enemy557, Enemy558, Enemy559, Enemy560, Enemy561, Enemy562, Enemy563, Enemy564, Enemy565, Enemy566, Enemy567, Enemy568, Enemy569, Enemy570, Enemy571, Enemy572, Enemy573, Enemy574, Enemy575, Enemy576, Enemy577, Enemy578, Enemy579, Enemy580, Enemy581, Enemy582, Enemy583, Enemy584, Enemy585, Enemy586, Enemy587, Enemy588, Enemy589, Enemy590, Enemy591, Enemy592, Enemy593, Enemy594, Enemy595, Enemy596, Enemy597, Enemy598, Enemy599, Enemy600, Enemy601, Enemy602, Enemy603, Enemy604, Enemy605, Enemy606, Enemy607, Enemy608, Enemy609, Enemy610, Enemy611, Enemy612, Enemy613, Enemy614, Enemy615, Enemy616, Enemy617, Enemy618, Enemy619, Enemy620, Enemy621, Enemy622, Enemy623, Enemy624, Enemy625, Enemy626, Enemy627, Enemy628, Enemy629, Enemy630, Enemy631, Enemy632, Enemy633, Enemy634, Enemy635, Enemy636, Enemy637, Enemy638, Enemy639, Enemy640, Enemy641, Enemy642, Enemy643, Enemy644, Enemy645, Enemy646, Enemy647, Enemy648, Enemy649, Enemy650, Enemy651, Enemy652, Enemy653, Enemy654, Enemy655, Enemy656, Enemy657, Enemy658, Enemy659, Enemy660, Enemy661, Enemy662, Enemy663, Enemy664, Enemy665, Enemy666, Enemy667, Enemy668, Enemy669, Enemy670, Enemy671, Enemy672, Enemy673, Enemy674, Enemy675, Enemy676, Enemy677, Enemy678, Enemy679, Enemy680, Enemy681, Enemy682, Enemy683, Enemy684, Enemy685, Enemy686, Enemy687, Enemy688, Enemy689, Enemy690, Enemy691, Enemy692, Enemy693, Enemy694, Enemy695, Enemy696, Enemy697, Enemy698, Enemy699, EnemyP0, EnemyP1, EnemyP2, EnemyP3, EnemyP4, EnemyP5, EnemyP6, EnemyP7, EnemyP8, EnemyP9, EnemyP10, EnemyP11, EnemyP12, EnemyP13, EnemyP14, EnemyP15, EnemyP16, EnemyP17, EnemyP18, EnemyP19, EnemyP20, EnemyP21, EnemyP22, EnemyP23, EnemyP24, EnemyP25, EnemyP26, EnemyP27, EnemyP28, EnemyP29, EnemyP30, EnemyP31, EnemyP32, EnemyP33, EnemyP34, EnemyP35, EnemyP36, EnemyP37, EnemyP38, EnemyP39, EnemyP40, EnemyP41, EnemyP42, EnemyP43, EnemyP44, EnemyP45, EnemyP46, EnemyP47, EnemyP48, EnemyP49, EnemyP50, EnemyP51, EnemyP52, EnemyP53, EnemyP54, EnemyP55, EnemyP56, EnemyP57, EnemyP58, EnemyP59, EnemyP60, EnemyP61, EnemyP62, EnemyP63, EnemyP64, EnemyP65, EnemyP66, EnemyP67, EnemyP68, EnemyP69, EnemyP70, EnemyP71, EnemyP72, EnemyP73, EnemyP74, EnemyP75, EnemyP76, EnemyP77, EnemyP78, EnemyP79, EnemyP80, EnemyP81, EnemyP82, EnemyP83, EnemyP84, EnemyP85, EnemyP86, EnemyP87, EnemyP88, EnemyP89, EnemyP90, EnemyP91, EnemyP92, EnemyP93, EnemyP94, EnemyP95, EnemyP96, EnemyP97, EnemyP98, EnemyP99, EnemyP100, EnemyP101, EnemyP102, EnemyP103, EnemyP104, EnemyP105, EnemyP106, EnemyP107, EnemyP108, EnemyP109, EnemyP110, EnemyP111, EnemyP112, EnemyP113, EnemyP114, EnemyP115, EnemyP116, EnemyP117, EnemyP118, EnemyP119, EnemyP120, EnemyP121, EnemyP122, EnemyP123, EnemyP124, EnemyP125, EnemyP126, EnemyP127, EnemyP128, EnemyP129, EnemyP130, EnemyP131, EnemyP132, EnemyP133, EnemyP134, EnemyP135, EnemyP136, EnemyP137, EnemyP138, EnemyP139, EnemyP140, EnemyP141, EnemyP142, EnemyP143, EnemyP144, EnemyP145, EnemyP146, EnemyP147, EnemyP148, EnemyP149, EnemyP150, EnemyP151, EnemyP152, EnemyP153, EnemyP154, EnemyP155, EnemyP156, EnemyP157, EnemyP158, EnemyP159, EnemyP160, EnemyP161, EnemyP162, EnemyP163, EnemyP164, EnemyP165, EnemyP166, EnemyP167, EnemyP168, EnemyP169, EnemyP170, EnemyP171, EnemyP172, EnemyP173, EnemyP174, EnemyP175, EnemyP176, EnemyP177, EnemyP178, EnemyP179, EnemyP180, EnemyP181, EnemyP182, EnemyP183, EnemyP184, EnemyP185, EnemyP186, EnemyP187, EnemyP188, EnemyP189, EnemyP190, EnemyP191, EnemyP192, EnemyP193, EnemyP194, EnemyP195, EnemyP196, EnemyP197, EnemyP198, EnemyP199, EnemyP200, EnemyP201, EnemyP202, EnemyP203, EnemyP204, EnemyP205, EnemyP206, EnemyP207, EnemyP208, EnemyP209, EnemyP210, EnemyP211, EnemyP212, EnemyP213, EnemyP214, EnemyP215, EnemyP216, EnemyP217, EnemyP218, EnemyP219, EnemyP220, EnemyP221, EnemyP222, EnemyP223, EnemyP224, EnemyP225, EnemyP226, EnemyP227, EnemyP228, EnemyP229, EnemyP230, EnemyP231, EnemyP232, EnemyP233, EnemyP234, EnemyP235, EnemyP236, EnemyP237, EnemyP238, EnemyP239, EnemyP240, EnemyP241, EnemyP242, EnemyP243, EnemyP244, EnemyP245, EnemyP246, EnemyP247, EnemyP248, EnemyP249, EnemyP250, EnemyP251, EnemyP252, EnemyP253, EnemyP254, EnemyP255, EnemyP256, EnemyP257, EnemyP258, EnemyP259, EnemyP260, EnemyP261, EnemyP262, EnemyP263, EnemyP264, EnemyP265, EnemyP266, EnemyP267, EnemyP268, EnemyP269, EnemyP270, EnemyP271, EnemyP272, EnemyP273, EnemyP274, EnemyP275, EnemyP276, EnemyP277, EnemyP278, EnemyP279, EnemyP280, EnemyP281, EnemyP282, EnemyP283, EnemyP284, EnemyP285, EnemyP286, EnemyP287, EnemyP288, EnemyP289, EnemyP290, EnemyP291, EnemyP292, EnemyP293, EnemyP294, EnemyP295, EnemyP296, EnemyP297, EnemyP298, EnemyP299, EnemyP300, EnemyP301, EnemyP302, EnemyP303, EnemyP304, EnemyP305, EnemyP306, EnemyP307, EnemyP308, EnemyP309, EnemyP310, EnemyP311, EnemyP312, EnemyP313, EnemyP314, EnemyP315, EnemyP316, EnemyP317, EnemyP318, EnemyP319, EnemyP320, EnemyP321, EnemyP322, EnemyP323, EnemyP324, EnemyP325, EnemyP326, EnemyP327, EnemyP328, EnemyP329, EnemyP330, EnemyP331, EnemyP332, EnemyP333, EnemyP334, EnemyP335, EnemyP336, EnemyP337, EnemyP338, EnemyP339, EnemyP340, EnemyP341, EnemyP342, EnemyP343, EnemyP344, EnemyP345, EnemyP346, EnemyP347, EnemyP348, EnemyP349, EnemyP350, EnemyP351, EnemyP352, EnemyP353, EnemyP354, EnemyP355, EnemyP356, EnemyP357, EnemyP358, EnemyP359, EnemyP360, EnemyP361, EnemyP362, EnemyP363, EnemyP364, EnemyP365, EnemyP366, EnemyP367, EnemyP368, EnemyP369, EnemyP370, EnemyP371, EnemyP372, EnemyP373, EnemyP374, EnemyP375, EnemyP376, EnemyP377, EnemyP378, EnemyP379, EnemyP380, EnemyP381, EnemyP382, EnemyP383, EnemyP384, EnemyP385, EnemyP386, EnemyP387, EnemyP388, EnemyP389, EnemyP390, EnemyP391, EnemyP392, EnemyP393, EnemyP394, EnemyP395, EnemyP396, EnemyP397, EnemyP398, EnemyP399, EnemyP400, EnemyP401, EnemyP402, EnemyP403, EnemyP404, EnemyP405, EnemyP406, EnemyP407, EnemyP408, EnemyP409, EnemyP410, EnemyP411, EnemyP412, EnemyP413, EnemyP414, EnemyP415, EnemyP416, EnemyP417, EnemyP418, EnemyP419, EnemyP420, EnemyP421, EnemyP422, EnemyP423, EnemyP424, EnemyP425, EnemyP426, EnemyP427, EnemyP428, EnemyP429, EnemyP430, EnemyP431, EnemyP432, EnemyP433, EnemyP434, EnemyP435, EnemyP436, EnemyP437, EnemyP438, EnemyP439, EnemyP440, EnemyP441, EnemyP442, EnemyP443, EnemyP444, EnemyP445, EnemyP446, EnemyP447, EnemyP448, EnemyP449, EnemyP450, EnemyP451, EnemyP452, EnemyP453, EnemyP454, EnemyP455, EnemyP456, EnemyP457, EnemyP458, EnemyP459, EnemyP460, EnemyP461, EnemyP462, EnemyP463, EnemyP464, EnemyP465, EnemyP466, EnemyP467, EnemyP468, EnemyP469, EnemyP470, EnemyP471, EnemyP472, EnemyP473, EnemyP474, EnemyP475, EnemyP476, EnemyP477, EnemyP478, EnemyP479, EnemyP480, EnemyP481, EnemyP482, EnemyP483, EnemyP484, EnemyP485, EnemyP486, EnemyP487, EnemyP488, EnemyP489, EnemyP490, EnemyP491, EnemyP492, EnemyP493, EnemyP494, EnemyP495, EnemyP496, EnemyP497, EnemyP498, EnemyP499, EnemyP500, EnemyP501, EnemyP502, EnemyP503, EnemyP504, EnemyP505, EnemyP506, EnemyP507, EnemyP508, EnemyP509, EnemyP510, EnemyP511, EnemyP512, EnemyP513, EnemyP514, EnemyP515, EnemyP516, EnemyP517, EnemyP518, EnemyP519, EnemyP520, EnemyP521, EnemyP522, EnemyP523, EnemyP524, EnemyP525, EnemyP526, EnemyP527, EnemyP528, EnemyP529, EnemyP530, EnemyP531, EnemyP532, EnemyP533, EnemyP534, EnemyP535, EnemyP536, EnemyP537, EnemyP538, EnemyP539, EnemyP540, EnemyP541, EnemyP542, EnemyP543, EnemyP544, EnemyP545, EnemyP546, EnemyP547, EnemyP548, EnemyP549, EnemyP550, EnemyP551, EnemyP552, EnemyP553, EnemyP554, EnemyP555, EnemyP556, EnemyP557, EnemyP558, EnemyP559, EnemyP560, EnemyP561, EnemyP562, EnemyP563, EnemyP564, EnemyP565, EnemyP566, EnemyP567, EnemyP568, EnemyP569, EnemyP570, EnemyP571, EnemyP572, EnemyP573, EnemyP574, EnemyP575, EnemyP576, EnemyP577, EnemyP578, EnemyP579, EnemyP580, EnemyP581, EnemyP582, EnemyP583, EnemyP584, EnemyP585, EnemyP586, EnemyP587, EnemyP588, EnemyP589, EnemyP590, EnemyP591, EnemyP592, EnemyP593, EnemyP594, EnemyP595, EnemyP596, EnemyP597, EnemyP598, EnemyP599, EnemyP600, EnemyP601, EnemyP602, EnemyP603, EnemyP604, EnemyP605, EnemyP606, EnemyP607, EnemyP608, EnemyP609, EnemyP610, EnemyP611, EnemyP612, EnemyP613, EnemyP614, EnemyP615, EnemyP616, EnemyP617, EnemyP618, EnemyP619, EnemyP620, EnemyP621, EnemyP622, EnemyP623, EnemyP624, EnemyP625, EnemyP626, EnemyP627, EnemyP628, EnemyP629, EnemyP630, EnemyP631, EnemyP632, EnemyP633, EnemyP634, EnemyP635, EnemyP636, EnemyP637, EnemyP638, EnemyP639, EnemyP640, EnemyP641, EnemyP642, EnemyP643, EnemyP644, EnemyP645, EnemyP646, EnemyP647, EnemyP648, EnemyP649, EnemyP650, EnemyP651, EnemyP652, EnemyP653, EnemyP654, EnemyP655, EnemyP656, EnemyP657, EnemyP658, EnemyP659, EnemyP660, EnemyP661, EnemyP662, EnemyP663, EnemyP664, EnemyP665, EnemyP666, EnemyP667, EnemyP668, EnemyP669, EnemyP670, EnemyP671, EnemyP672, EnemyP673, EnemyP674, EnemyP675, EnemyP676, EnemyP677, EnemyP678, EnemyP679, EnemyP680, EnemyP681, EnemyP682, EnemyP683, EnemyP684, EnemyP685, EnemyP686, EnemyP687, EnemyP688, EnemyP689, EnemyP690, EnemyP691, EnemyP692, EnemyP693, EnemyP694, EnemyP695, EnemyP696, EnemyP697, EnemyP698, EnemyP699,
+
+        Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
+        // Example 2
+        // Turret7, Turret8, Turret9, Turret10, Turret11, Turret12, Turret13,
+        // Example 3
+        // Turret14, Turret15, Turret16, Turret17, Turret18,
+        GameTime;
+</system>
+	<queries>
+		<query>
+			<formula>A[] not deadlock</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:44:08 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; forall(i : enemy_int) main_tower_reached_time[i] &gt; 0</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 22:21:23 +0200">
+				<option key="--diagnostic" value="0"/>
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; forall (i: int[3, 5]) main_tower_reached_time[i] != 0 &amp;&amp; main_tower_reached_time[i] &lt;= 25 * 1 + 2 * (i - 3)</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:17:19 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; forall (i: int[0, 2]) main_tower_reached_time[i] != 0 &amp;&amp; main_tower_reached_time[i] &lt;= 25 * 3 + 3 * i</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:40:03 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy0.main_tower &amp;&amp; t &lt;= 25 * 3</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:39:19 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy1.main_tower &amp;&amp; t &lt;= 25 * 3 + 3</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:40:27 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy2.main_tower &amp;&amp; t &lt;= 25 * 3 + 6</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:40:51 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy3.main_tower &amp;&amp; t &lt;= 25</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:44:17 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy4.main_tower and t &lt;= 25 + 2</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:15:11 +0200">
+			</result>
+		</query>
+		<query>
+			<formula>A&lt;&gt; Enemy5.main_tower &amp;&amp; t &lt;= 25 + 4</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:36:19 +0200">
+				<option key="--statespace-consumption" value="3"/>
+			</result>
+		</query>
+		<query>
+			<formula>A[] forall(i: enemy_int) (coord_x[i] == 0 &amp;&amp; coord_y[i] == 0) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 1 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 2 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 3 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 4 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 5 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 6 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 8 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 8 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 9 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 9 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 7)</formula>
+			<comment/>
+			<result outcome="success" type="quality" timestamp="2025-04-24 23:39:38 +0200">
+			</result>
+		</query>
+		<query>
+			<formula/>
+			<comment/>
+		</query>
+		<query>
+			<formula>E&lt;&gt; main_tower_life_points &lt; 0</formula>
+			<comment>if the main_tower_life_points is always &gt;= 0 means the one chosen is a winning configuration
+We can also ask </comment>
+		</query>
+		<query>
+			<formula>A[] (end_game imply main_tower_life_points&lt;0)</formula>
+			<comment/>
+		</query>
+		<query>
+			<formula>A[] not deadlock</formula>
+			<comment/>
+		</query>
+		<query>
+			<formula/>
+			<comment/>
+		</query>
+	</queries>
+</nta>
