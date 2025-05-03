@@ -1,4 +1,4 @@
-def generate_enemies(num_squares=70, num_circles=101):
+def generate_enemies(num_squares=300, num_circles=400):
     with open('system.txt', 'w') as f:
         # Generate square enemies (type 0)
         for i in range(num_squares):
@@ -30,7 +30,9 @@ def generate_enemies(num_squares=70, num_circles=101):
         all_entities = enemies + enemy_ps
         
         for i in range(0, len(all_entities), 7):
-            f.write(", ".join(all_entities[i:i+7]) + (",\n" if i + 7 < len(all_entities) else ";\n"))
+            if i >= 7:  # Add 8 spaces for the second and subsequent groups
+                f.write("        ")
+            f.write(", ".join(all_entities[i:i+7]) + ",\n")
 
 if __name__ == "__main__":
     generate_enemies()
