@@ -104,10 +104,27 @@ d = 0</label>
 
 bool just_shot = false;
 
+/**
+ * Returns the maximum of two integers.
+ *
+ * @param a First integer.
+ * @param b Second integer.
+ * @return The greater of a and b.
+ */
 int max(int a, int b) {
     return a &gt; b ? a : b;
 }
 
+/**
+ * Simulates firing at a specific enemy and handles the consequences.
+ *
+ * Reduces the enemy's health by the turret's inflicted damage. If this
+ * results in the enemy's death, marks it as no longer alive, updates kill
+ * counters, and checks whether all enemies have been eliminated — in which
+ * case the game ends in victory. Sets `just_shot` to true.
+ *
+ * @param i Index of the enemy being targeted.
+ */
 void bang(int i) {
     int j; // iterator for the end game check
     bool found_alive=false; // utility for the end game check
@@ -126,6 +143,20 @@ void bang(int i) {
     just_shot = true;
 }
 
+/**
+ * Scans for enemies within shooting range and selects the optimal target.
+ *
+ * Iterates over all active enemies and computes their distance from the turret.
+ * Among those within range, the closest enemy is selected. If multiple enemies
+ * are equally close, the one with the earliest spawn time is preferred. If a tie
+ * persists, enemies of type SQUARE are favored.
+ *
+ * Once a target is selected, the turret fires by calling `bang(enemy_to_shoot)`,
+ * and `just_shot` is set to true. If no valid target is found, `just_shot` is set
+ * to false.
+ *
+ * This function should be invoked whenever an enemy moves or the turret reloads.
+ */
 void scan_for_enemies() {
     int enemy_to_shoot = -1;          // which enemy to shoot (-1 means none)
     int closest_distance = TURRETS[type_turret].shooting_range + 1;
@@ -237,7 +268,14 @@ c=0</label>
 	<template>
 		<name>Enemy</name>
 		<parameter>const enemy_int id, const int type</parameter>
-		<declaration>void reached_main_tower() {
+		<declaration>/**
+ * Handles the event when an enemy reaches the main tower.
+ *
+ * Records the current time as the moment the enemy reached the tower,
+ * updates its position to the tower's coordinates, and inflicts damage on the main tower.
+ * If the tower's life drops to zero or below, the game is ended.
+ */
+void reached_main_tower() {
     main_tower_reached_time[id] = int_c;
     coord_x[id] = 15;
     coord_y[id] = 4;
@@ -684,6 +722,17 @@ coord_y[id] = 1</label>
 		<parameter>const enemy_int id, const int type, const int serial_number</parameter>
 		<declaration>clock c;
 
+/**
+ * Initializes the state of an enemy upon spawning on the map.
+ *
+ * This function sets up all relevant attributes of an enemy identified by `id`.
+ * It sets its position to the origin (0,0), assigns its type and corresponding
+ * health based on a global enemy definition, computes its spawn time based on
+ * a serial number and the type-specific spawn delay, and marks it as alive.
+ *
+ * The function is intended to be called exactly once per enemy instance,
+ * at the moment of spawning.
+ */
 void initialize() {
     coord_x[id] = 0;
     coord_y[id] = 0;
@@ -762,7 +811,7 @@ void initialize() {
 			<label kind="assignment" x="-892" y="-59">c = 0</label>
 		</transition>
 	</template>
-	<system>// Given Example
+	<system>// Example 1 - Given Example
 Turret0 = Turret(0, 5, 5);
 Turret1 = Turret(1, 8, 2);
 Turret2 = Turret(1, 8, 6);
@@ -771,7 +820,7 @@ Turret4 = Turret(1, 14, 6);
 Turret5 = Turret(2, 2, 3);
 Turret6 = Turret(2, 11, 5);
 
-// Example 2 -- All enemies die
+// Example 2 - Good Turrets Placement
 Turret7 = Turret(1, 5, 5);
 Turret8 = Turret(0, 8, 2);
 Turret9 = Turret(0, 8, 6);
@@ -780,7 +829,7 @@ Turret11 = Turret(0, 14, 6);
 Turret12 = Turret(0, 2, 3);
 Turret13 = Turret(2, 11, 5);
 
-// Example 3 -- Main tower dies
+// Example 3 - Bad Turrets Placement
 Turret14 = Turret(2, 5, 5);
 Turret15 = Turret(2, 8, 6);
 Turret16 = Turret(1, 14, 6);
@@ -795,7 +844,6 @@ EnemyP3 = EnemyP(3, 1, 0);
 EnemyP4 = EnemyP(4, 1, 1);
 EnemyP5 = EnemyP(5, 1, 2);
 
-// 3x SQUARE, 3x CIRCLE
 Enemy0 = Enemy(0, 0);
 Enemy1 = Enemy(1, 0);
 Enemy2 = Enemy(2, 0);
@@ -805,11 +853,18 @@ Enemy5 = Enemy(5, 1);
 
 system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
         EnemyP0, EnemyP1, EnemyP2, EnemyP3, EnemyP4, EnemyP5,
+
+
+        // Example 1
         Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
+
         // Example 2
         // Turret7, Turret8, Turret9, Turret10, Turret11, Turret12, Turret13,
+
         // Example 3
         // Turret14, Turret15, Turret16, Turret17, Turret18,
+
+
         GameTime;
 </system>
 	<queries>
