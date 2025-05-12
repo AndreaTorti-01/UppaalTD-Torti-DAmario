@@ -48,11 +48,11 @@ broadcast chan scan;
 urgent broadcast chan asap;
 
 // CLOCKS
-clock t, d;
+clock t;
 int int_c = 0;
 
 // QUERIES CONTROL
-bool no_turrets = false;</declaration>
+bool no_turrets = true;</declaration>
 	<template>
 		<name>GameTime</name>
 		<declaration>/**
@@ -60,7 +60,8 @@ bool no_turrets = false;</declaration>
  * prevents it from deadlocking
  */
 
-const int timeout = 84;</declaration>
+const int timeout = 84;
+clock d;</declaration>
 		<location id="id0" x="-391" y="-51">
 			<name x="-382" y="-85">game_on</name>
 			<label kind="invariant" x="-382" y="-8">d &lt;= 1 &amp;&amp; t &lt;= timeout</label>
@@ -234,9 +235,10 @@ void scan_for_enemies() {
 			<source ref="id7"/>
 			<target ref="id8"/>
 			<label kind="guard" x="-501" y="-8">end_game</label>
+			<label kind="synchronisation" x="-416" y="-8">asap!</label>
 			<nail x="-204" y="17"/>
 			<nail x="-510" y="17"/>
-			<nail x="-510" y="-408"/>
+			<nail x="-510" y="-399"/>
 		</transition>
 		<transition id="id12">
 			<source ref="id10"/>
@@ -285,7 +287,7 @@ void scan_for_enemies() {
 		<name>Enemy</name>
 		<parameter>const enemy_int id, const int type</parameter>
 		<declaration>/**
- * This template models a single enemy
+ * This template models a single enemy entity
  */
 
 
@@ -798,24 +800,32 @@ void initialize() {
 			<label kind="invariant" x="-756" y="-76">c &lt;= ENEMIES[type].speed</label>
 		</location>
 		<location id="id115" x="-1054" y="-34">
-			<name x="-1088" y="-68">not_spawned</name>
-			<label kind="invariant" x="-1139" y="-93">t &lt;= birth_time[id]</label>
+			<name x="-1164" y="-34">not_spawned</name>
+			<label kind="invariant" x="-1224" y="-68">t &lt;= birth_time[id]</label>
 		</location>
 		<location id="id116" x="-68" y="-238">
-			<name x="-289" y="-272">outside_or_dead_or_game_end</name>
+			<name x="-306" y="-272">outside_or_dead_or_game_end</name>
 		</location>
 		<location id="id117" x="-1054" y="68">
 			<committed/>
 		</location>
 		<init ref="id117"/>
 		<transition id="id118">
+			<source ref="id115"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-1045" y="-144">end_game</label>
+			<label kind="synchronisation" x="-1045" y="-119">asap!</label>
+			<nail x="-1054" y="-280"/>
+			<nail x="-68" y="-280"/>
+		</transition>
+		<transition id="id119">
 			<source ref="id113"/>
 			<target ref="id114"/>
-			<label kind="synchronisation" x="-450" y="42">scan!</label>
+			<label kind="synchronisation" x="-450" y="43">scan!</label>
 			<nail x="-306" y="68"/>
 			<nail x="-544" y="68"/>
 		</transition>
-		<transition id="id119">
+		<transition id="id120">
 			<source ref="id114"/>
 			<target ref="id113"/>
 			<label kind="guard" x="-535" y="-25">c &gt;= ENEMIES[type].speed &amp;&amp;
@@ -823,29 +833,29 @@ void initialize() {
 			<label kind="synchronisation" x="-399" y="-59">move[id]!</label>
 			<label kind="assignment" x="-467" y="-59">c = 0</label>
 		</transition>
-		<transition id="id120">
+		<transition id="id121">
 			<source ref="id114"/>
 			<target ref="id116"/>
-			<label kind="guard" x="-323" y="-229">!alive[id]</label>
-			<label kind="synchronisation" x="-408" y="-229">asap!</label>
+			<label kind="guard" x="-476" y="-229">!alive[id]</label>
+			<label kind="synchronisation" x="-527" y="-229">asap!</label>
 			<nail x="-544" y="-238"/>
 		</transition>
-		<transition id="id121">
+		<transition id="id122">
 			<source ref="id117"/>
 			<target ref="id115"/>
-			<label kind="assignment" x="-1037" y="42">initialize()</label>
-		</transition>
-		<transition id="id122">
-			<source ref="id114"/>
-			<target ref="id116"/>
-			<label kind="guard" x="-408" y="-153">end_game</label>
-			<label kind="synchronisation" x="-442" y="-127">asap!</label>
+			<label kind="assignment" x="-1037" y="43">initialize()</label>
 		</transition>
 		<transition id="id123">
+			<source ref="id114"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-450" y="-127">end_game</label>
+			<label kind="synchronisation" x="-484" y="-102">asap!</label>
+		</transition>
+		<transition id="id124">
 			<source ref="id115"/>
 			<target ref="id114"/>
-			<label kind="guard" x="-943" y="-25">t &gt;= birth_time[id]</label>
-			<label kind="synchronisation" x="-773" y="-25">scan!</label>
+			<label kind="guard" x="-994" y="-25">t &gt;= birth_time[id] &amp;&amp; !end_game</label>
+			<label kind="synchronisation" x="-714" y="-25">scan!</label>
 			<label kind="assignment" x="-918" y="-85">c = 0,
 alive[id] = true</label>
 		</transition>
@@ -859,7 +869,7 @@ Turret4 = Turret(1, 14, 6);
 Turret5 = Turret(2, 2, 3);
 Turret6 = Turret(2, 11, 5);
 
-// Example 2 - Good Turrets Placement
+// Example 2 - Better Turrets Placement
 Turret7 = Turret(1, 5, 5);
 Turret8 = Turret(0, 8, 2);
 Turret9 = Turret(0, 8, 6);
@@ -868,7 +878,7 @@ Turret11 = Turret(0, 14, 6);
 Turret12 = Turret(0, 2, 3);
 Turret13 = Turret(2, 11, 5);
 
-// Example 3 - Bad Turrets Placement
+// Example 3 - Worse Turrets Placement
 Turret14 = Turret(1, 5, 5);
 Turret15 = Turret(1, 8, 6);
 Turret16 = Turret(1, 14, 6);
@@ -893,14 +903,14 @@ system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
         EnemyP0, EnemyP1, EnemyP2, EnemyP3, EnemyP4, EnemyP5,
 
 
-        // Example 1
-        // Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
+        // Example 1 - Given Example
+        Turret0, Turret1, Turret2, Turret3, Turret4, Turret5, Turret6,
 
-        // Example 2
+        // Example 2 - Better Turrets Placement
         // Turret7, Turret8, Turret9, Turret10, Turret11, Turret12, Turret13,
 
-        // Example 3
-        Turret14, Turret15, Turret16, Turret17,
+        // Example 3 - Worse Turrets Placement
+        // Turret14, Turret15, Turret16, Turret17,
 
 
         GameTime;
@@ -913,69 +923,69 @@ system  Enemy0, Enemy1, Enemy2, Enemy3, Enemy4, Enemy5,
 		<query>
 			<formula>A[] not deadlock</formula>
 			<comment>game without turrets does not deadlock</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:16 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:45 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>E&lt;&gt; forall(i : enemy_int) main_tower_reached_time[i] &gt; 0</formula>
 			<comment>there is a state where all enemies have reached the main tower, at some point, in at least one execution</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:17 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:45 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; forall (i: int[3, 5]) main_tower_reached_time[i] != 0 &amp;&amp; main_tower_reached_time[i] &lt;= 25 * 1 + 2 * (i - 3)</formula>
 			<comment>Circles reach the Main Tower in no more than n · c time units, where n is the length of the longest path from the start of the Map to the Main Tower, and c is the speed of the Circles.
 This happens in all executions.</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:17 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:46 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; forall (i: int[0, 2]) main_tower_reached_time[i] != 0 &amp;&amp; main_tower_reached_time[i] &lt;= 25 * 3 + 3 * i</formula>
 			<comment>Squares reach the Main Tower in no more than n·s time units, where n is the length of the longest path from the start of the Map to the Main Tower, and s is the speed of the Squares.
 This happens in all executions.</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:18 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:47 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy0.main_tower &amp;&amp; t &lt;= 25 * 3</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for square 0</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:19 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:48 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy1.main_tower &amp;&amp; t &lt;= 25 * 3 + 3</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for square 1</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:20 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:49 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy2.main_tower &amp;&amp; t &lt;= 25 * 3 + 6</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for square 2</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:22 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:50 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy3.main_tower &amp;&amp; t &lt;= 25</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for circle 3</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:22 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:51 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy4.main_tower and t &lt;= 25 + 2</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for circle 4</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:22 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:51 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A&lt;&gt; Enemy5.main_tower &amp;&amp; t &lt;= 25 + 4</formula>
 			<comment>Redundant copy of queries 3 and 4, specific for circle 5</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:23 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:52 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A[] forall(i: enemy_int) (coord_x[i] == 0 &amp;&amp; coord_y[i] == 0) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 0 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 1 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 2 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 3 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 4 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 5 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 6 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 7 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 8 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 8 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 9 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 9 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 10 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 11 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 12 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 13 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 14 &amp;&amp; coord_y[i] == 7) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 1) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 2) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 3) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 4) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 5) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 6) || (coord_x[i] == 15 &amp;&amp; coord_y[i] == 7)</formula>
 			<comment>All enemies never leave the red path in every possible execution.</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:42:24 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:30:53 +0200">
 			</result>
 		</query>
 		<query>
@@ -991,7 +1001,7 @@ This happens in all executions.</comment>
 			<comment>All executions are winning under configuration 1
 
 It's winning</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:49:52 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:31:57 +0200">
 			</result>
 		</query>
 		<query>
@@ -999,7 +1009,7 @@ It's winning</comment>
 			<comment>All executions are winning under configuration 2
 
 It's winning</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:53:21 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:34:04 +0200">
 			</result>
 		</query>
 		<query>
@@ -1007,8 +1017,7 @@ It's winning</comment>
 			<comment>There is at least one losing execution with the configuration 3
 
 There is</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 17:16:05 +0200">
-				<option key="--diagnostic" value="0"/>
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:34:47 +0200">
 			</result>
 		</query>
 		<query>
@@ -1016,13 +1025,13 @@ There is</comment>
 			<comment>There is at least one winning execution with the configuration 3
 
 There is</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:57:57 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:34:51 +0200">
 			</result>
 		</query>
 		<query>
 			<formula>A[] not deadlock</formula>
 			<comment>The game never deadlocks under configuration 1</comment>
-			<result outcome="success" type="quality" timestamp="2025-05-04 16:44:27 +0200">
+			<result outcome="success" type="quality" timestamp="2025-05-12 16:37:20 +0200">
 			</result>
 		</query>
 	</queries>
