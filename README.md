@@ -1,10 +1,12 @@
-# UppaalTD: Formal Tower Defense Game
+# UppaalTD: A Formal Tower Defense Game
 
 [![UPPAAL](https://img.shields.io/badge/UPPAAL-Model%20Checking-blue)](https://uppaal.org/)
 [![Formal Methods](https://img.shields.io/badge/Formal%20Methods-TCTL-green)](https://en.wikipedia.org/wiki/Computation_tree_logic)
 [![PDF Report](https://img.shields.io/badge/Report-PDF-red)](Report.pdf)
 
 > **A comprehensive formal verification project modeling and analyzing a tower defense game using UPPAAL's timed automata and statistical model checking capabilities.**
+
+![alt text](Configs-png/config-1.png)
 
 ## Project Overview
 
