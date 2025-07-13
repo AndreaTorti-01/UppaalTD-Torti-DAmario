@@ -28,15 +28,11 @@ This project demonstrates advanced formal methods techniques by modeling a compl
 
 ### Game Elements
 
-<div align="center">
-
 | Enemies | | Turrets | |
 |---------|--|---------|--|
 | 🔵 **Circle** | Fast, low damage | 🔫 **Basic** | Standard range/damage |
 | 🟩 **Square** | Slow, high damage | 💥 **Cannon** | High damage, slow reload |
 | | | 🎯 **Sniper** | Long range, precise |
-
-</div>
 
 ## Verification Results
 
